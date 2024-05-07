@@ -17,10 +17,12 @@ pub trait CompositeSplitter {
 }
 
 pub trait Factorizer {
-    fn factors(&self, n: &BigUint) -> Vec<BigUint>;
+    /// Returns an unsorted list of prime factors of n.
+    /// Primes will appear multiple times equal to the highest power of the prime which divides n.
+    fn prime_factors(&self, n: &BigUint) -> Vec<BigUint>;
 
     fn factor_counts(&self, n: &BigUint) -> Vec<(BigUint, usize)> {
-        let mut factors = self.factors(n);
+        let mut factors = self.prime_factors(n);
         factors.sort();
         let mut factors_iter = factors.into_iter().peekable();
         let mut factor_counts = vec![];

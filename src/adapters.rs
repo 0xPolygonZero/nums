@@ -10,7 +10,7 @@ pub struct PrimalityTestFromFactorizer<F: Factorizer> {
 
 impl<F: Factorizer> PrimalityTest for PrimalityTestFromFactorizer<F> {
     fn is_prime(&self, n: &BigUint) -> bool {
-        let factors = self.factorizer.factors(n);
+        let factors = self.factorizer.prime_factors(n);
         match factors.len() {
             0 => {
                 assert!(n.is_one());
@@ -39,7 +39,7 @@ where
     PT: PrimalityTest,
     CS: CompositeSplitter,
 {
-    fn factors(&self, n: &BigUint) -> Vec<BigUint> {
+    fn prime_factors(&self, n: &BigUint) -> Vec<BigUint> {
         assert!(!n.is_zero());
 
         if n.is_one() {
@@ -55,8 +55,8 @@ where
         assert!(!b.is_one());
         assert_ne!(&a, n);
         assert_ne!(&b, n);
-        let mut factors = self.factors(&a);
-        factors.extend(self.factors(&b));
+        let mut factors = self.prime_factors(&a);
+        factors.extend(self.prime_factors(&b));
         factors
     }
 }

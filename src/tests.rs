@@ -22,14 +22,14 @@ fn factor_test_consistency() {
     for n in 1u8..100 {
         let n = BigUint::from(n);
 
-        let mut res_trial_division = TrialDivision.factors(&n);
+        let mut res_trial_division = TrialDivision.prime_factors(&n);
 
         let primality_test = MillerRabin { error_bits: 128 };
         let mut res_pollard_rho = FactorizerFromSplitter {
             primality_test,
             composite_splitter: PollardRho,
         }
-        .factors(&n);
+        .prime_factors(&n);
 
         res_trial_division.sort();
         res_pollard_rho.sort();

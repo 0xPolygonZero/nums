@@ -28,7 +28,7 @@ impl PrimalityTest for TrialDivision {
 }
 
 impl Factorizer for TrialDivision {
-    fn factors(&self, n: &BigUint) -> Vec<BigUint> {
+    fn prime_factors(&self, n: &BigUint) -> Vec<BigUint> {
         assert!(!n.is_zero());
 
         let mut n = n.clone();
@@ -75,25 +75,25 @@ mod tests {
 
     #[test]
     fn factor() {
-        assert_eq!(TrialDivision.factors(&BigUint::one()), vec![]);
+        assert_eq!(TrialDivision.prime_factors(&BigUint::one()), vec![]);
         assert_eq!(
-            TrialDivision.factors(&BigUint::from(2u8)),
+            TrialDivision.prime_factors(&BigUint::from(2u8)),
             vec![BigUint::from(2u8)]
         );
         assert_eq!(
-            TrialDivision.factors(&BigUint::from(3u8)),
+            TrialDivision.prime_factors(&BigUint::from(3u8)),
             vec![BigUint::from(3u8)]
         );
         assert_eq!(
-            TrialDivision.factors(&BigUint::from(4u8)),
+            TrialDivision.prime_factors(&BigUint::from(4u8)),
             vec![BigUint::from(2u8), BigUint::from(2u8)]
         );
         assert_eq!(
-            TrialDivision.factors(&BigUint::from(5u8)),
+            TrialDivision.prime_factors(&BigUint::from(5u8)),
             vec![BigUint::from(5u8)]
         );
         assert_eq!(
-            TrialDivision.factors(&BigUint::from(6u8)),
+            TrialDivision.prime_factors(&BigUint::from(6u8)),
             vec![BigUint::from(2u8), BigUint::from(3u8)]
         );
     }
