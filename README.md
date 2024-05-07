@@ -1,6 +1,6 @@
 # num-factor
 
-This library contains some utilities for primality testing and factorization. It builds on `num`'s `BigUint`s type.
+This library contains some number theoretic functions, such as primality testing and factorization, for `BigUint`s.
 
 
 ## Status

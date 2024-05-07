@@ -1,8 +1,13 @@
 [package]
-name = "quadratic-sieve"
+name = "nums"
+description = "Number theoretic functions, such as primality testing and factorization, for BigUints"
+authors = ["Daniel Lubarov <daniel@lubarov.com>"]
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/0xPolygonZero/nums/"
 license = "MIT OR Apache-2.0"
+keywords = ["bigint", "prime", "factor"]
+categories = ["mathematics"]
 
 [dependencies]
 num-bigint = { version = "0.4.4", features = ["rand"] }
