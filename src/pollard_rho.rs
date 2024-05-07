@@ -1,8 +1,10 @@
+use crate::util::distance;
 use crate::CompositeSplitter;
 use num_bigint::BigUint;
 use num_integer::{gcd, Integer};
-use num_traits::{CheckedSub, One};
+use num_traits::One;
 
+#[derive(Copy, Clone, Debug)]
 pub struct PollardRho;
 
 impl CompositeSplitter for PollardRho {
@@ -45,10 +47,6 @@ fn pollard_rho_attempt(n: &BigUint, addend: &BigUint) -> Option<BigUint> {
     }
 }
 
-fn distance(x: &BigUint, y: &BigUint) -> BigUint {
-    x.checked_sub(y).unwrap_or_else(|| y - x)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho};
@@ -61,13 +59,14 @@ mod tests {
         // This n is the order of the multiplicative group of BabyBear^5.
         let n = BigUint::from_str("33075446146858977625031769923874103810955673600").unwrap();
         let primality_test = MillerRabin { error_bits: 128 };
-        let res_pollard_rho = FactorizerFromSplitter {
+        let factor_counts = FactorizerFromSplitter {
             primality_test,
             composite_splitter: PollardRho,
         }
         .factor_counts(&n);
+
         assert_eq!(
-            res_pollard_rho,
+            factor_counts,
             vec![
                 (BigUint::from(2u8), 27),
                 (BigUint::from(3u8), 1),
