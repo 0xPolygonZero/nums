@@ -7,7 +7,7 @@ edition = "2021"
 repository = "https://github.com/0xPolygonZero/nums/"
 license = "MIT OR Apache-2.0"
 keywords = ["bigint", "prime", "factor"]
-categories = ["mathematics"]
+categories = ["mathematics", "no-std"]
 
 [dependencies]
 num-bigint = { version = "0.4.4", features = ["rand"] }
