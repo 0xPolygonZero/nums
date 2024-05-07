@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{One, Zero};
@@ -52,6 +54,7 @@ impl Factorizer for TrialDivision {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
 

@@ -1,5 +1,5 @@
 use crate::CompositeSplitter;
-use num_bigint::{BigUint};
+use num_bigint::BigUint;
 use num_integer::{gcd, Integer};
 use num_traits::{CheckedSub, One};
 
@@ -7,14 +7,12 @@ pub struct PollardRho;
 
 impl CompositeSplitter for PollardRho {
     fn divisor(&self, n: &BigUint) -> BigUint {
-        dbg!(n);
         if n.is_even() {
             return BigUint::from(2u8);
         }
 
         let mut addend = BigUint::from(1u8);
         loop {
-            dbg!(&addend);
             if let Some(d) = pollard_rho_attempt(n, &addend) {
                 return d;
             }
@@ -54,8 +52,9 @@ fn distance(x: &BigUint, y: &BigUint) -> BigUint {
 #[cfg(test)]
 mod tests {
     use crate::{Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho};
+    use alloc::vec;
+    use core::str::FromStr;
     use num_bigint::BigUint;
-    use std::str::FromStr;
 
     #[test]
     fn baby_bear_ext5() {

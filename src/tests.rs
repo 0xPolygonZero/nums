@@ -20,7 +20,6 @@ fn primality_test_consistency() {
 #[test]
 fn factor_test_consistency() {
     for n in 1u8..100 {
-        dbg!(n);
         let n = BigUint::from(n);
 
         let mut res_trial_division = TrialDivision.factors(&n);

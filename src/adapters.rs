@@ -1,4 +1,6 @@
 use crate::traits::{CompositeSplitter, Factorizer, PrimalityTest};
+use alloc::vec;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 

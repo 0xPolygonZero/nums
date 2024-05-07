@@ -1,4 +1,4 @@
-# num-factor
+# nums
 
 This library contains some number theoretic functions, such as primality testing and factorization, for `BigUint`s.
 

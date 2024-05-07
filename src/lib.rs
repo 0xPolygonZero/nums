@@ -1,3 +1,7 @@
+#![no_std]
+
+extern crate alloc;
+
 mod adapters;
 mod miller_rabin;
 mod pollard_rho;
