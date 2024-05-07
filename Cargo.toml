@@ -1,0 +1,11 @@
+[package]
+name = "quadratic-sieve"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+num-bigint = { version = "0.4.4", features = ["rand"] }
+num-traits = "0.2.19"
+num-integer = "0.1.46"
+rand = "0.8.5"
