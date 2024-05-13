@@ -11,8 +11,13 @@ pub trait CompositeSplitter {
     fn divisor(&self, n: &BigUint) -> BigUint;
 
     fn split(&self, n: &BigUint) -> (BigUint, BigUint) {
-        let d = self.divisor(n);
-        (n / &d, d)
+        let d1 = self.divisor(n);
+        let d2 = n / &d1;
+        if d1 < d2 {
+            (d1, d2)
+        } else {
+            (d2, d1)
+        }
     }
 }
 
@@ -22,8 +27,7 @@ pub trait Factorizer {
     fn prime_factors(&self, n: &BigUint) -> Vec<BigUint>;
 
     fn factor_counts(&self, n: &BigUint) -> Vec<(BigUint, usize)> {
-        let mut factors = self.prime_factors(n);
-        factors.sort();
+        let factors = self.prime_factors(n);
         let mut factors_iter = factors.into_iter().peekable();
         let mut factor_counts = vec![];
         while let Some(f) = factors_iter.next() {

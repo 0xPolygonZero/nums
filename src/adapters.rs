@@ -55,8 +55,10 @@ where
         assert!(!b.is_one());
         assert_ne!(&a, n);
         assert_ne!(&b, n);
+
         let mut factors = self.prime_factors(&a);
         factors.extend(self.prime_factors(&b));
+        factors.sort();
         factors
     }
 }

@@ -6,6 +6,7 @@ use num_traits::{One, Zero};
 ///
 /// This is a probabilistic test, but can be configured to have a cryptographically small error
 /// margin.
+#[derive(Copy, Clone, Debug)]
 pub struct MillerRabin {
     pub error_bits: usize,
 }
@@ -27,10 +28,10 @@ impl PrimalityTest for MillerRabin {
 
         let num_bases = (self.error_bits + 1) / 2;
         'base_search: for _ in 0..num_bases {
-            let base = rng.gen_biguint_range(&one, &n);
+            let base = rng.gen_biguint_range(&one, n);
 
             // Let x = 2^d mod n.
-            let x = base.modpow(&d, &n);
+            let x = base.modpow(&d, n);
             if x.is_one() {
                 continue; // pass
             }
@@ -41,7 +42,7 @@ impl PrimalityTest for MillerRabin {
                 continue; // pass with r = 0
             }
             for _r in 1..s {
-                square = square.modpow(&two, &n);
+                square = square.modpow(&two, n);
                 if square == n_minus_1 {
                     continue 'base_search; // pass
                 }
