@@ -4,6 +4,7 @@ use num_bigint::BigUint;
 use num_traits::{CheckedSub, One, Zero};
 
 #[must_use]
+#[inline]
 pub(crate) fn is_square(n: &BigUint) -> bool {
     &n.sqrt().pow(2) == n
 }
@@ -32,17 +33,15 @@ pub(crate) fn is_quadratic_residue(n: &BigUint, p: &BigUint) -> bool {
     }
 }
 
-// pub(crate) fn sqrts(_n: &BigUint) -> Option<(BigUint, BigUint)> {
-//     todo!()
-// }
-
 /// Computes `ceil(a / b)`. Assumes `a + b` does not overflow.
 #[must_use]
-pub const fn ceil_div_usize(a: usize, b: usize) -> usize {
+#[inline]
+pub(crate) const fn ceil_div_usize(a: usize, b: usize) -> usize {
     (a + b - 1) / b
 }
 
 #[must_use]
+#[inline]
 pub(crate) fn distance(x: &BigUint, y: &BigUint) -> BigUint {
     x.checked_sub(y).unwrap_or_else(|| y - x)
 }
@@ -75,6 +74,13 @@ pub(crate) fn transpose(mat: Vec<BitVec>) -> Vec<BitVec> {
 #[must_use]
 pub(crate) fn biguint_to_f64(n: &BigUint) -> f64 {
     n.to_str_radix(10).parse::<f64>().unwrap()
+}
+
+/// The size of `n` in bits.
+#[must_use]
+#[inline]
+pub(crate) const fn bits_usize(n: usize) -> usize {
+    usize::BITS as usize - n.leading_zeros() as usize
 }
 
 #[cfg(test)]

@@ -12,8 +12,7 @@ Primality tests:
 Factorization:
 - [x] Trial division
 - [x] Pollard's rho
-- [x] Dixon's method
-- [ ] Quadratic sieve
+- [x] Quadratic sieve
 - [ ] General number sieve
 
 
