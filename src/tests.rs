@@ -1,6 +1,6 @@
 use crate::{
-    DixonsRandomSquares, Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho,
-    PrimalityTest, TrialDivision,
+    Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho, PrimalityTest, QuadraticSieve,
+    TrialDivision,
 };
 use num_bigint::BigUint;
 
@@ -22,14 +22,14 @@ fn primality_test_consistency() {
 fn factor_test_consistency() {
     let primality_test = MillerRabin { error_bits: 128 };
 
-    let pollard_rho_factorizer = FactorizerFromSplitter {
+    let rho_factorizer = FactorizerFromSplitter {
         primality_test,
         composite_splitter: PollardRho,
     };
 
-    let dixons_factorizer = FactorizerFromSplitter {
+    let qs_factorizer = FactorizerFromSplitter {
         primality_test,
-        composite_splitter: DixonsRandomSquares,
+        composite_splitter: QuadraticSieve,
     };
 
     for n in 1u8..100 {
@@ -37,10 +37,10 @@ fn factor_test_consistency() {
 
         let res_trial_division = TrialDivision.prime_factors(&n);
 
-        let res_rho = pollard_rho_factorizer.prime_factors(&n);
-        let res_dixons = dixons_factorizer.prime_factors(&n);
+        let res_rho = rho_factorizer.prime_factors(&n);
+        let res_qs = qs_factorizer.prime_factors(&n);
 
         assert_eq!(res_rho, res_trial_division, "inconsistent for {}", n);
-        assert_eq!(res_dixons, res_trial_division, "inconsistent for {}", n);
+        assert_eq!(res_qs, res_trial_division, "inconsistent for {}", n);
     }
 }

@@ -15,7 +15,7 @@ impl CompositeSplitter for PollardRho {
 
         let mut addend = BigUint::from(1u8);
         loop {
-            if let Some(d) = pollard_rho_attempt(n, &addend) {
+            if let Some(d) = rho_attempt(n, &addend) {
                 return d;
             }
             addend.inc();
@@ -26,7 +26,7 @@ impl CompositeSplitter for PollardRho {
     }
 }
 
-fn pollard_rho_attempt(n: &BigUint, addend: &BigUint) -> Option<BigUint> {
+fn rho_attempt(n: &BigUint, addend: &BigUint) -> Option<BigUint> {
     let start = BigUint::from(2u8);
     let mut x = start.clone();
     let mut y = start.clone();
