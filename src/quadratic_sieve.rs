@@ -7,7 +7,7 @@ use num_traits::{One, ToPrimitive, Zero};
 use tracing::{event, Level};
 
 use crate::bitvec::BitVec;
-use crate::field::{all_sqrts_mod_prime_power, fp_usize_sqrt, zn_sub};
+use crate::field::{all_sqrts_mod_prime_power, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
@@ -50,7 +50,7 @@ impl CompositeSplitter for QuadraticSieve {
         }
 
         let min_smooth_ys = base.len() + MARGIN;
-        let mut sieve = Sieve::new(n, base.clone());
+        let mut sieve = Sieve::new(n, base.clone(), max_base_prime);
         while sieve.xs_with_smooth_ys.len() < min_smooth_ys {
             event!(
                 Level::DEBUG,
@@ -163,7 +163,7 @@ struct Sieve {
     /// For each base element or power thereof, the next numbers to be sieved with it, encoded as
     /// offsets relative to `min_candidate`. For odd primes, there are two such offsets, each
     /// corresponding to one of two square roots mod the prime.
-    base_progress: Vec<(usize, Vec<usize>)>,
+    base_progress: Vec<(usize, usize, Vec<usize>)>,
 
     /// For each candidate, contains whatever smooth factors we've encountered so far.
     /// The `i`th entry is for `min_candidate + i`.
@@ -174,17 +174,15 @@ struct Sieve {
 }
 
 impl Sieve {
-    fn new(n: &BigUint, base: Vec<usize>) -> Self {
+    fn new(n: &BigUint, base: Vec<usize>, max_divisor: usize) -> Self {
         let min_candidate = n.sqrt() + BigUint::one();
         let min_candidate_bits = min_candidate.bits();
-
-        let base_max = base.iter().copied().max().unwrap();
 
         let mut base_progress = vec![];
         for p in base {
             let powers = (1u32..)
                 .map(|exp| (exp, p.pow(exp)))
-                .take_while(|&(_, power)| power <= base_max);
+                .take_while(|&(_, power)| power <= max_divisor);
             for (exp, power) in powers {
                 let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
                 let n_reduced = (n % power).to_usize().unwrap();
@@ -193,7 +191,7 @@ impl Sieve {
                     .map(|root| zn_sub(root, min_candidate_reduced, power))
                     .collect();
                 if !offsets.is_empty() {
-                    base_progress.push((power, offsets));
+                    base_progress.push((p, power, offsets));
                 }
             }
         }
@@ -219,7 +217,7 @@ impl Sieve {
             self.y_smooth_factors.push(BigUint::one());
         }
 
-        for (prime, ref mut offsets) in self.base_progress.iter_mut() {
+        for (prime, power, ref mut offsets) in self.base_progress.iter_mut() {
             for offset in offsets {
                 while *offset < to {
                     let candidate = &mut self.y_smooth_factors[*offset];
@@ -232,7 +230,7 @@ impl Sieve {
                             self.xs_with_smooth_ys.push(x);
                         }
                     }
-                    *offset += *prime;
+                    *offset += *power;
                 }
             }
         }
@@ -259,7 +257,7 @@ mod tests {
     #[test]
     fn test_sieve() {
         let n = BigUint::from(100u8);
-        let mut sieve = Sieve::new(&n, vec![3, 17]);
+        let mut sieve = Sieve::new(&n, vec![3, 17], 30);
         sieve.expand_to(20);
         assert_eq!(&sieve.min_candidate, &BigUint::from(11u8));
         assert_eq!(
@@ -272,18 +270,18 @@ mod tests {
                 BigUint::from(3u8),
                 BigUint::one(),
                 BigUint::from(3u8),
-                BigUint::from(3u8),
+                BigUint::from(27u8),
                 BigUint::one(),
-                BigUint::from(3u8),
+                BigUint::from(9u8),
                 BigUint::from(3u8),
                 BigUint::one(),
                 BigUint::from(3u8),
                 BigUint::from(3u8),
                 BigUint::from(17u8),
                 BigUint::from(3u8),
-                BigUint::from(3u8),
+                BigUint::from(9u8),
                 BigUint::from(17u8),
-                BigUint::from(3u8),
+                BigUint::from(9u8),
                 BigUint::from(3u8),
                 BigUint::one(),
             ]

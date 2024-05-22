@@ -1,9 +1,11 @@
 //! Utilities for finite field math.
 
 use crate::util::{bits_usize, is_quadratic_residue};
+use alloc::vec;
+use alloc::vec::Vec;
 use num_bigint::BigUint;
 use num_integer::Integer;
-use num_traits::{One, ToPrimitive};
+use num_traits::One;
 
 #[must_use]
 pub(crate) fn all_sqrts_mod_prime_power(n: usize, p: usize, k: usize) -> Vec<usize> {
@@ -26,13 +28,13 @@ pub(crate) fn sqrt_mod_prime_power(n: usize, p: usize, k: usize) -> Option<usize
     let n = n % p_pow;
     assert_ne!(k, 0);
     if k == 1 {
-        return fp_usize_sqrt(n % p, p);
+        return zn_sqrt(n % p, p);
     }
     if n == 0 {
         return Some(0);
     }
 
-    if let Some(x) = fp_usize_sqrt(n % p, p) {
+    if let Some(x) = zn_sqrt(n % p, p) {
         if x == 0 {
             assert!(n.is_multiple_of(&p));
             let p_squared = p * p;
@@ -57,31 +59,9 @@ pub(crate) fn sqrt_mod_prime_power(n: usize, p: usize, k: usize) -> Option<usize
     }
 }
 
-/// `-x` in `Z_n`.
-#[must_use]
-#[inline]
-pub(crate) fn zn_neg(x: usize, n: usize) -> usize {
-    debug_assert!(x < n);
-    if x == 0 {
-        0
-    } else {
-        n - x
-    }
-}
-
-/// `1 / x` in `Z_n`.
-#[must_use]
-pub(crate) fn zn_inv(x: usize, n: usize) -> Option<usize> {
-    debug_assert!(x < n);
-    // TODO: Slow version
-    BigUint::from(x)
-        .modinv(&BigUint::from(n))
-        .map(|x| x.to_usize().unwrap())
-}
-
 /// If `n` is a quadratic residue mod `p`, return one of its roots.
 #[must_use]
-pub(crate) fn fp_usize_sqrt(n: usize, p: usize) -> Option<usize> {
+pub(crate) fn zn_sqrt(n: usize, p: usize) -> Option<usize> {
     assert!(n < p);
     let n_biguint = BigUint::from(n);
     let p_biguint = BigUint::from(p);
@@ -90,8 +70,7 @@ pub(crate) fn fp_usize_sqrt(n: usize, p: usize) -> Option<usize> {
     } else if p == 2 {
         // Tonelli–Shanks doesn't work for p = 2.
         // In GF(2), 0^2 = 0 and 1^2 = 1.
-        assert!(n < 2);
-        return Some(n);
+        Some(n)
     } else if is_quadratic_residue(&n_biguint, &p_biguint) {
         // Apply the Tonelli–Shanks algorithm.
         // Write p - 1 = q 2^s, for some odd q.
@@ -192,8 +171,9 @@ pub(crate) fn zn_squares_until_one(mut x: usize, n: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::field::{fp_usize_sqrt, sqrt_mod_prime_power, zn_square};
+    use crate::field::{all_sqrts_mod_prime_power, sqrt_mod_prime_power, zn_sqrt, zn_square};
     use crate::BitVec;
+    use alloc::vec;
 
     #[test]
     fn test_sqrt_mod_prime() {
@@ -205,7 +185,7 @@ mod tests {
         }
 
         for x in 0..P {
-            let opt_root = fp_usize_sqrt(x, P);
+            let opt_root = zn_sqrt(x, P);
             if let Some(root) = opt_root {
                 assert_eq!(root * root % P, x);
             } else {
@@ -234,5 +214,12 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_all_sqrts_mod_prime_power() {
+        let mut sqrts = all_sqrts_mod_prime_power(100, 3, 3);
+        sqrts.sort();
+        assert_eq!(sqrts, vec![10, 17]);
     }
 }

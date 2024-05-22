@@ -62,15 +62,15 @@ mod tests {
 
     #[test]
     fn is_prime() {
-        assert_eq!(TrialDivision.is_prime(&BigUint::zero()), false);
-        assert_eq!(TrialDivision.is_prime(&BigUint::one()), false);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(2u8)), true);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(3u8)), true);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(4u8)), false);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(5u8)), true);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(6u8)), false);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(7u8)), true);
-        assert_eq!(TrialDivision.is_prime(&BigUint::from(8u8)), false);
+        assert!(!TrialDivision.is_prime(&BigUint::zero()));
+        assert!(!TrialDivision.is_prime(&BigUint::one()));
+        assert!(TrialDivision.is_prime(&BigUint::from(2u8)));
+        assert!(TrialDivision.is_prime(&BigUint::from(3u8)));
+        assert!(!TrialDivision.is_prime(&BigUint::from(4u8)));
+        assert!(TrialDivision.is_prime(&BigUint::from(5u8)));
+        assert!(!TrialDivision.is_prime(&BigUint::from(6u8)));
+        assert!(TrialDivision.is_prime(&BigUint::from(7u8)));
+        assert!(!TrialDivision.is_prime(&BigUint::from(8u8)));
     }
 
     #[test]
