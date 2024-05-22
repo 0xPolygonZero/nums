@@ -160,10 +160,10 @@ struct Sieve {
     min_candidate: BigUint,
     min_candidate_bits: u64,
 
-    /// For each base prime, the next numbers to be sieved with it, encoded as offsets relative to
-    /// `min_candidate`. There are two such offsets, each corresponding to one of the square roots
-    /// mod the prime.
-    base_progress: Vec<(usize, (usize, usize))>,
+    /// For each base element, the next numbers to be sieved with it, encoded as offsets relative to
+    /// `min_candidate`. For odd primes, there are two such offsets, each corresponding to one of
+    /// two square roots mod the prime.
+    base_progress: Vec<(usize, Vec<usize>)>,
 
     /// For each candidate, contains whatever smooth factors we've encountered so far.
     /// The `i`th entry is for `min_candidate + i`.
@@ -183,14 +183,15 @@ impl Sieve {
             .filter_map(|p| {
                 let n_reduced = (n % p).to_usize().unwrap();
                 fp_usize_sqrt(n_reduced, p).map(|root| {
-                    assert!(!root.is_zero(), "p divides n, should have early terminated");
-                    let other_root = p - root;
-                    assert_ne!(root, other_root);
                     let min_candidate_reduced = (&min_candidate % p).to_usize().unwrap();
-                    let offsets = (
-                        zn_sub(root, min_candidate_reduced, p),
-                        zn_sub(other_root, min_candidate_reduced, p),
-                    );
+                    let mut offsets = vec![zn_sub(root, min_candidate_reduced, p)];
+
+                    if p != 2 {
+                        let other_root = p - root;
+                        assert_ne!(root, other_root);
+                        offsets.push(zn_sub(other_root, min_candidate_reduced, p));
+                    }
+
                     (p, offsets)
                 })
             })
@@ -219,8 +220,8 @@ impl Sieve {
 
         // TODO: Handle prime powers, using gf_usize_sqrt for starting offsets.
 
-        for (prime, (ref mut offset_a, ref mut offset_b)) in self.base_progress.iter_mut() {
-            for offset in [offset_a, offset_b] {
+        for (prime, ref mut offsets) in self.base_progress.iter_mut() {
+            for offset in offsets {
                 while *offset < to {
                     let candidate = &mut self.y_smooth_factors[*offset];
                     *candidate *= *prime;
