@@ -5,6 +5,20 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{One, ToPrimitive};
 
+#[must_use]
+pub(crate) fn all_sqrts_mod_prime_power(n: usize, p: usize, k: usize) -> Vec<usize> {
+    if let Some(root) = sqrt_mod_prime_power(n, p, k) {
+        // TODO: Need to double check this logic, are we missing some roots?
+        if p == 2 {
+            vec![root]
+        } else {
+            vec![root, p.pow(k as u32) - root]
+        }
+    } else {
+        vec![]
+    }
+}
+
 /// If `n` is a quadratic residue mod `p^k`, return one of its roots.
 #[must_use]
 pub(crate) fn sqrt_mod_prime_power(n: usize, p: usize, k: usize) -> Option<usize> {

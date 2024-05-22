@@ -7,7 +7,7 @@ use num_traits::{One, ToPrimitive, Zero};
 use tracing::{event, Level};
 
 use crate::bitvec::BitVec;
-use crate::field::{fp_usize_sqrt, zn_sub};
+use crate::field::{all_sqrts_mod_prime_power, fp_usize_sqrt, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
@@ -160,9 +160,9 @@ struct Sieve {
     min_candidate: BigUint,
     min_candidate_bits: u64,
 
-    /// For each base element, the next numbers to be sieved with it, encoded as offsets relative to
-    /// `min_candidate`. For odd primes, there are two such offsets, each corresponding to one of
-    /// two square roots mod the prime.
+    /// For each base element or power thereof, the next numbers to be sieved with it, encoded as
+    /// offsets relative to `min_candidate`. For odd primes, there are two such offsets, each
+    /// corresponding to one of two square roots mod the prime.
     base_progress: Vec<(usize, Vec<usize>)>,
 
     /// For each candidate, contains whatever smooth factors we've encountered so far.
@@ -178,24 +178,25 @@ impl Sieve {
         let min_candidate = n.sqrt() + BigUint::one();
         let min_candidate_bits = min_candidate.bits();
 
-        let base_progress = base
-            .into_iter()
-            .filter_map(|p| {
-                let n_reduced = (n % p).to_usize().unwrap();
-                fp_usize_sqrt(n_reduced, p).map(|root| {
-                    let min_candidate_reduced = (&min_candidate % p).to_usize().unwrap();
-                    let mut offsets = vec![zn_sub(root, min_candidate_reduced, p)];
+        let base_max = base.iter().copied().max().unwrap();
 
-                    if p != 2 {
-                        let other_root = p - root;
-                        assert_ne!(root, other_root);
-                        offsets.push(zn_sub(other_root, min_candidate_reduced, p));
-                    }
-
-                    (p, offsets)
-                })
-            })
-            .collect();
+        let mut base_progress = vec![];
+        for p in base {
+            let powers = (1u32..)
+                .map(|exp| (exp, p.pow(exp)))
+                .take_while(|&(_, power)| power <= base_max);
+            for (exp, power) in powers {
+                let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
+                let n_reduced = (n % power).to_usize().unwrap();
+                let offsets: Vec<_> = all_sqrts_mod_prime_power(n_reduced, p, exp as usize)
+                    .into_iter()
+                    .map(|root| zn_sub(root, min_candidate_reduced, power))
+                    .collect();
+                if !offsets.is_empty() {
+                    base_progress.push((power, offsets));
+                }
+            }
+        }
 
         Self {
             n: n.clone(),
@@ -217,8 +218,6 @@ impl Sieve {
         for _x in from..to {
             self.y_smooth_factors.push(BigUint::one());
         }
-
-        // TODO: Handle prime powers, using gf_usize_sqrt for starting offsets.
 
         for (prime, ref mut offsets) in self.base_progress.iter_mut() {
             for offset in offsets {
