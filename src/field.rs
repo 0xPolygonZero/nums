@@ -2,26 +2,77 @@
 
 use crate::util::{bits_usize, is_quadratic_residue};
 use num_bigint::BigUint;
-use num_traits::One;
+use num_integer::Integer;
+use num_traits::{One, ToPrimitive};
 
 /// If `n` is a quadratic residue mod `p^k`, return one of its roots.
 #[must_use]
-pub(crate) fn gf_usize_sqrt(n: usize, p: usize, k: usize) -> Option<usize> {
+pub(crate) fn sqrt_mod_prime_power(n: usize, p: usize, k: usize) -> Option<usize> {
+    let p_pow = p.pow(k as u32);
+    let n = n % p_pow;
+    assert_ne!(k, 0);
     if k == 1 {
-        return fp_usize_sqrt(n, p);
+        return fp_usize_sqrt(n % p, p);
+    }
+    if n == 0 {
+        return Some(0);
     }
 
-    // TODO: Hensel lifting for the recursive case.
-    todo!()
+    if let Some(x) = fp_usize_sqrt(n % p, p) {
+        if x == 0 {
+            assert!(n.is_multiple_of(&p));
+            let p_squared = p * p;
+            if n.is_multiple_of(&p_squared) {
+                // x^2 = n (mod p^k)
+                // (s p)^2 = t p^2 (mod p^k)
+                // s^2 = t (mod p^{k-2})
+                sqrt_mod_prime_power(n / p_squared, p, k - 2).map(|s| s * p)
+            } else {
+                None
+            }
+        } else {
+            // See https://mathoverflow.net/a/223806/128564
+            let q = p.pow(k as u32);
+            let r = q / p;
+            let e = (q - 2 * r + 1) / 2;
+            let res = zn_pow(x, r, q) * zn_pow(n, e, q);
+            Some(res % q)
+        }
+    } else {
+        None
+    }
+}
+
+/// `-x` in `Z_n`.
+#[must_use]
+#[inline]
+pub(crate) fn zn_neg(x: usize, n: usize) -> usize {
+    debug_assert!(x < n);
+    if x == 0 {
+        0
+    } else {
+        n - x
+    }
+}
+
+/// `1 / x` in `Z_n`.
+#[must_use]
+pub(crate) fn zn_inv(x: usize, n: usize) -> Option<usize> {
+    debug_assert!(x < n);
+    // TODO: Slow version
+    BigUint::from(x)
+        .modinv(&BigUint::from(n))
+        .map(|x| x.to_usize().unwrap())
 }
 
 /// If `n` is a quadratic residue mod `p`, return one of its roots.
 #[must_use]
 pub(crate) fn fp_usize_sqrt(n: usize, p: usize) -> Option<usize> {
+    assert!(n < p);
     let n_biguint = BigUint::from(n);
     let p_biguint = BigUint::from(p);
     if n == 0 {
-        Some(n)
+        Some(0)
     } else if p == 2 {
         // Tonelli–Shanks doesn't work for p = 2.
         // In GF(2), 0^2 = 0 and 1^2 = 1.
@@ -39,12 +90,12 @@ pub(crate) fn fp_usize_sqrt(n: usize, p: usize) -> Option<usize> {
             .expect("No quadratic non-residues?");
 
         let mut m = s;
-        let mut c = fp_usize_modmul(z, q, p);
-        let mut t = fp_usize_modmul(n, q, p);
-        let mut r = fp_usize_modmul(n, (q + 1) / 2, p);
+        let mut c = zn_pow(z, q, p);
+        let mut t = zn_pow(n, q, p);
+        let mut r = zn_pow(n, (q + 1) / 2, p);
 
         while !t.is_one() {
-            let i = fp_usize_squares_until_one(t, p);
+            let i = zn_squares_until_one(t, p);
 
             let mut b = c;
             for _ in 0..m - i - 1 {
@@ -53,23 +104,21 @@ pub(crate) fn fp_usize_sqrt(n: usize, p: usize) -> Option<usize> {
             }
 
             m = i;
-            c = b * b;
-            c %= p;
-            t *= c;
-            t %= p;
-            r *= b;
-            r %= p;
+            c = zn_mul(b, b, p);
+            t = zn_mul(t, c, p);
+            r = zn_mul(r, b, p);
         }
+        assert_ne!(r, 0);
         Some(r)
     } else {
         None
     }
 }
 
-/// Computes `x - y` in a prime field `F_p`.
+/// Computes `x - y` in `Z_n`.
 #[must_use]
 #[inline]
-pub(crate) fn fp_usize_sub(x: usize, y: usize, p: usize) -> usize {
+pub(crate) fn zn_sub(x: usize, y: usize, p: usize) -> usize {
     debug_assert!(x < p);
     debug_assert!(y < p);
     let (diff, underflow) = x.overflowing_sub(y);
@@ -80,30 +129,48 @@ pub(crate) fn fp_usize_sub(x: usize, y: usize, p: usize) -> usize {
     }
 }
 
-/// Computes `x^y` if `F_p`.
+/// Computes `x * y` in `Z_n`.
 #[must_use]
-pub(crate) fn fp_usize_modmul(x: usize, y: usize, p: usize) -> usize {
+#[inline]
+pub(crate) fn zn_mul(x: usize, y: usize, n: usize) -> usize {
+    debug_assert!(x < n);
+    debug_assert!(y < n);
+    (x as u128 * y as u128 % n as u128) as usize
+}
+
+/// Computes `x^2` in `Z_n`.
+#[must_use]
+#[inline]
+pub(crate) fn zn_square(x: usize, n: usize) -> usize {
+    debug_assert!(x < n);
+    zn_mul(x, x, n)
+}
+
+/// Computes `x^y` in `Z_n`.
+#[must_use]
+pub(crate) fn zn_pow(x: usize, y: usize, n: usize) -> usize {
     let mut current = x;
     let mut product = 1;
     for j in 0..bits_usize(y) {
         if (y >> j & 1) != 0 {
             product *= current;
-            product %= p;
+            product %= n;
         }
         current *= current;
-        current %= p;
+        current %= n;
     }
     product
 }
 
-/// Given an element `x` of `F_p`, return the number of squares needed to reach 1.
+/// Given an element `x` of `Z_n`, return the number of squares needed to reach 1.
 #[must_use]
 #[inline]
-pub(crate) fn fp_usize_squares_until_one(mut x: usize, p: usize) -> usize {
+pub(crate) fn zn_squares_until_one(mut x: usize, n: usize) -> usize {
     assert_ne!(x, 0);
+    assert!(x < n);
     let mut count = 0;
     while !x.is_one() {
-        x = x * x % p;
+        x = zn_square(x, n);
         count += 1;
     }
     count
@@ -111,11 +178,11 @@ pub(crate) fn fp_usize_squares_until_one(mut x: usize, p: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::field::fp_usize_sqrt;
+    use crate::field::{fp_usize_sqrt, sqrt_mod_prime_power, zn_square};
     use crate::BitVec;
 
     #[test]
-    fn test_sqrt() {
+    fn test_sqrt_mod_prime() {
         const P: usize = 31;
 
         let mut squares = BitVec::new(P);
@@ -129,6 +196,28 @@ mod tests {
                 assert_eq!(root * root % P, x);
             } else {
                 assert!(!squares.get(x));
+            }
+        }
+    }
+
+    #[test]
+    fn test_sqrt_mod_prime_power() {
+        const P: usize = 5;
+
+        for power in 1..=5 {
+            let modulus = P.pow(power as u32);
+            let mut squares = BitVec::new(modulus);
+            for x in 0..modulus {
+                squares.set(x * x % modulus, true);
+            }
+
+            for n in 0..modulus {
+                let opt_root = sqrt_mod_prime_power(n, P, power);
+                if let Some(root) = opt_root {
+                    assert_eq!(zn_square(root, modulus), n);
+                } else {
+                    assert!(!squares.get(n));
+                }
             }
         }
     }

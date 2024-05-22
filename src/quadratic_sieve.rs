@@ -7,7 +7,7 @@ use num_traits::{One, ToPrimitive, Zero};
 use tracing::{event, Level};
 
 use crate::bitvec::BitVec;
-use crate::field::{fp_usize_sqrt, fp_usize_sub};
+use crate::field::{fp_usize_sqrt, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
@@ -188,8 +188,8 @@ impl Sieve {
                     assert_ne!(root, other_root);
                     let min_candidate_reduced = (&min_candidate % p).to_usize().unwrap();
                     let offsets = (
-                        fp_usize_sub(root, min_candidate_reduced, p),
-                        fp_usize_sub(other_root, min_candidate_reduced, p),
+                        zn_sub(root, min_candidate_reduced, p),
+                        zn_sub(other_root, min_candidate_reduced, p),
                     );
                     (p, offsets)
                 })
