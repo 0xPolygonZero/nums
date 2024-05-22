@@ -63,7 +63,7 @@ mod tests {
             primality_test,
             composite_splitter: PollardRho,
         }
-        .factor_counts(&n);
+        .prime_factor_counts(&n);
 
         assert_eq!(
             factor_counts,

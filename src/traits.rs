@@ -26,7 +26,7 @@ pub trait Factorizer {
     /// Primes will appear multiple times equal to the highest power of the prime which divides n.
     fn prime_factors(&self, n: &BigUint) -> Vec<BigUint>;
 
-    fn factor_counts(&self, n: &BigUint) -> Vec<(BigUint, usize)> {
+    fn prime_factor_counts(&self, n: &BigUint) -> Vec<(BigUint, usize)> {
         let factors = self.prime_factors(n);
         let mut factors_iter = factors.into_iter().peekable();
         let mut factor_counts = vec![];
