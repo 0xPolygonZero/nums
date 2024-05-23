@@ -271,7 +271,7 @@ mod tests {
     use tracing_subscriber::{EnvFilter, Registry};
 
     use crate::bitvec::BitVec;
-    use crate::quadratic_sieve::{exponent_parity_vec, Sieve};
+    use crate::qsieve::{exponent_parity_vec, Sieve};
     use crate::{CompositeSplitter, QuadraticSieve};
 
     #[test]
