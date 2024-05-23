@@ -1,6 +1,5 @@
 use crate::traits::{CompositeSplitter, Factorizer, PrimalityTest};
-use alloc::vec;
-use alloc::vec::Vec;
+use crate::FactoredInteger;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 
@@ -10,7 +9,7 @@ pub struct PrimalityTestFromFactorizer<F: Factorizer> {
 
 impl<F: Factorizer> PrimalityTest for PrimalityTestFromFactorizer<F> {
     fn is_prime(&self, n: &BigUint) -> bool {
-        let factors = self.factorizer.prime_factors(n);
+        let factors = self.factorizer.prime_factors(n).to_vec();
         match factors.len() {
             0 => {
                 assert!(n.is_one());
@@ -39,15 +38,15 @@ where
     PT: PrimalityTest,
     CS: CompositeSplitter,
 {
-    fn prime_factors(&self, n: &BigUint) -> Vec<BigUint> {
+    fn prime_factors(&self, n: &BigUint) -> FactoredInteger {
         assert!(!n.is_zero());
 
         if n.is_one() {
-            return vec![];
+            return FactoredInteger::one();
         }
 
         if self.primality_test.is_prime(n) {
-            return vec![n.clone()];
+            return FactoredInteger::single(n.clone());
         }
 
         let (a, b) = self.composite_splitter.split(n);
@@ -56,9 +55,6 @@ where
         assert_ne!(&a, n);
         assert_ne!(&b, n);
 
-        let mut factors = self.prime_factors(&a);
-        factors.extend(self.prime_factors(&b));
-        factors.sort();
-        factors
+        self.prime_factors(&a) * self.prime_factors(&b)
     }
 }

@@ -49,7 +49,7 @@ fn rho_attempt(n: &BigUint, addend: &BigUint) -> Option<BigUint> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho};
+    use crate::{FactoredInteger, Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho};
     use alloc::vec;
     use core::str::FromStr;
     use num_bigint::BigUint;
@@ -63,18 +63,18 @@ mod tests {
             primality_test,
             composite_splitter: PollardRho,
         }
-        .prime_factor_counts(&n);
+        .prime_factors(&n);
 
         assert_eq!(
             factor_counts,
-            vec![
+            FactoredInteger::from_ordered_factor_counts(vec![
                 (BigUint::from(2u8), 27),
                 (BigUint::from(3u8), 1),
                 (BigUint::from(5u8), 2),
                 (BigUint::from(26321u16), 1),
                 (BigUint::from(1081891u32), 1),
                 (BigUint::from(115384818561587951104978331u128), 1),
-            ]
+            ])
         );
     }
 }

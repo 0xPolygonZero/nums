@@ -1,11 +1,10 @@
 use alloc::vec;
-use alloc::vec::Vec;
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{One, Zero};
 
 use crate::traits::PrimalityTest;
-use crate::Factorizer;
+use crate::{FactoredInteger, Factorizer};
 
 /// The trial division method for primality testing or factorization.
 pub struct TrialDivision;
@@ -28,7 +27,7 @@ impl PrimalityTest for TrialDivision {
 }
 
 impl Factorizer for TrialDivision {
-    fn prime_factors(&self, n: &BigUint) -> Vec<BigUint> {
+    fn prime_factors(&self, n: &BigUint) -> FactoredInteger {
         assert!(!n.is_zero());
 
         let mut n = n.clone();
@@ -48,7 +47,8 @@ impl Factorizer for TrialDivision {
         if !n.is_one() {
             factors.push(n);
         }
-        factors
+
+        FactoredInteger::from_ordered_factors(factors)
     }
 }
 
@@ -58,7 +58,7 @@ mod tests {
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
 
-    use crate::{Factorizer, PrimalityTest, TrialDivision};
+    use crate::{FactoredInteger, Factorizer, PrimalityTest, TrialDivision};
 
     #[test]
     fn is_prime() {
@@ -75,26 +75,29 @@ mod tests {
 
     #[test]
     fn factor() {
-        assert_eq!(TrialDivision.prime_factors(&BigUint::one()), vec![]);
+        assert_eq!(
+            TrialDivision.prime_factors(&BigUint::one()),
+            FactoredInteger::one()
+        );
         assert_eq!(
             TrialDivision.prime_factors(&BigUint::from(2u8)),
-            vec![BigUint::from(2u8)]
+            FactoredInteger::single(BigUint::from(2u8))
         );
         assert_eq!(
             TrialDivision.prime_factors(&BigUint::from(3u8)),
-            vec![BigUint::from(3u8)]
+            FactoredInteger::single(BigUint::from(3u8))
         );
         assert_eq!(
             TrialDivision.prime_factors(&BigUint::from(4u8)),
-            vec![BigUint::from(2u8), BigUint::from(2u8)]
+            FactoredInteger::from_factors(vec![BigUint::from(2u8), BigUint::from(2u8)])
         );
         assert_eq!(
             TrialDivision.prime_factors(&BigUint::from(5u8)),
-            vec![BigUint::from(5u8)]
+            FactoredInteger::single(BigUint::from(5u8))
         );
         assert_eq!(
             TrialDivision.prime_factors(&BigUint::from(6u8)),
-            vec![BigUint::from(2u8), BigUint::from(3u8)]
+            FactoredInteger::from_factors(vec![BigUint::from(2u8), BigUint::from(3u8)])
         );
     }
 }
