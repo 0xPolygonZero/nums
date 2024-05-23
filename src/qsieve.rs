@@ -22,6 +22,7 @@ const MARGIN: usize = 20;
 pub struct QuadraticSieve;
 
 impl CompositeSplitter for QuadraticSieve {
+    #[instrument]
     fn divisor(&self, n: &BigUint) -> BigUint {
         event!(Level::INFO, "Splitting {}", n);
         let q = |x: &BigUint| x * x - n;

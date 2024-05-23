@@ -2,10 +2,24 @@ use std::env;
 use std::str::FromStr;
 
 use num_bigint::BigUint;
+use tracing::level_filters::LevelFilter;
+use tracing_forest::ForestLayer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Registry};
 
 use nums::{Factorizer, FactorizerFromSplitter, MillerRabin, PollardRho, QuadraticSieve};
 
 fn main() {
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+
+    Registry::default()
+        .with(env_filter)
+        .with(ForestLayer::default())
+        .init();
+
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
         println!("Usage: {} <algorithm> <number>", args[0]);
