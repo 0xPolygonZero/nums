@@ -1,6 +1,8 @@
 use crate::bitvec::BitVec;
 use alloc::vec::Vec;
+use tracing::instrument;
 
+#[instrument(skip_all)]
 pub(crate) fn gaussian_elimination(rows: &mut [BitVec]) {
     let height = rows.len();
 

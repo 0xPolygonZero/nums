@@ -1,10 +1,12 @@
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::str::FromStr;
 
 use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::{One, ToPrimitive, Zero};
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 use crate::bitvec::BitVec;
 use crate::field::{all_sqrts_mod_prime_power, zn_sub};
@@ -21,7 +23,7 @@ pub struct QuadraticSieve;
 
 impl CompositeSplitter for QuadraticSieve {
     fn divisor(&self, n: &BigUint) -> BigUint {
-        event!(Level::DEBUG, "Splitting {}", n);
+        event!(Level::INFO, "Splitting {}", n);
         let q = |x: &BigUint| x * x - n;
 
         let n_float = biguint_to_f64(n);
@@ -30,14 +32,14 @@ impl CompositeSplitter for QuadraticSieve {
         let max_base_prime = ((ln_n * ln_n.ln()).sqrt() / 2.0).exp();
         // Make sure our base isn't tiny.
         let max_base_prime = (max_base_prime as usize).max(300);
-        event!(Level::DEBUG, "Using base with max of {}", max_base_prime);
+        event!(Level::INFO, "Using base with max of {}", max_base_prime);
 
         let base = SieveOfEratosthenes::generate(max_base_prime);
         let base: Vec<_> = base
             .into_iter()
             .filter(|&p| is_quadratic_residue(n, &BigUint::from(p)))
             .collect();
-        event!(Level::DEBUG, "{} primes in base", base.len());
+        event!(Level::INFO, "{} primes in base", base.len());
 
         // If any p in our base divides n, just return that divisor.
         // Normally we wouldn't bother with such edge cases, but the sieve code doesn't like p | n,
@@ -51,15 +53,18 @@ impl CompositeSplitter for QuadraticSieve {
 
         let min_smooth_ys = base.len() + MARGIN;
         let mut sieve = Sieve::new(n, base.clone(), max_base_prime);
+        let mut sieve_iteration = 0usize;
         while sieve.xs_with_smooth_ys.len() < min_smooth_ys {
             event!(
-                Level::DEBUG,
-                "Sieving: {} of {}",
+                Level::INFO,
+                "Sieving {}, found {} of {}",
+                sieve_iteration,
                 sieve.xs_with_smooth_ys.len(),
                 min_smooth_ys
             );
             // TODO: To improve it for tiny inputs, maybe do some multiple of base.len()?
-            sieve.expand_by(1 << 18);
+            sieve.expand_by(1 << 21);
+            sieve_iteration += 1;
         }
 
         let xs_with_smooth_ys = sieve.xs_with_smooth_ys;
@@ -85,7 +90,7 @@ impl CompositeSplitter for QuadraticSieve {
         loop {
             let selection = nullspace_member(&sparse_y_parity_vecs_t, &solution_index)
                 .expect("No more solutions to try; need to expand margin");
-            event!(Level::DEBUG, "Selection: {:?}", &selection);
+            event!(Level::INFO, "Selection: {:?}", &selection);
 
             let mut prod_selected_xs = BigUint::one();
             let mut prod_selected_ys = BigUint::one();
@@ -109,7 +114,7 @@ impl CompositeSplitter for QuadraticSieve {
                 return gcd;
             } else {
                 event!(
-                    Level::DEBUG,
+                    Level::INFO,
                     "Found solution with {} = ±{} (mod n); retrying",
                     a,
                     b
@@ -158,40 +163,51 @@ fn division_loop(n: &mut BigUint, divisor: usize) -> usize {
 struct Sieve {
     n: BigUint,
     min_candidate: BigUint,
-    min_candidate_bits: u64,
+    base: Vec<usize>,
 
     /// For each base element or power thereof, the next numbers to be sieved with it, encoded as
     /// offsets relative to `min_candidate`. For odd primes, there are two such offsets, each
     /// corresponding to one of two square roots mod the prime.
-    base_progress: Vec<(usize, usize, Vec<usize>)>,
+    factors: Vec<SieveFactorInfo>,
 
     /// For each candidate, contains whatever smooth factors we've encountered so far.
     /// The `i`th entry is for `min_candidate + i`.
-    // TODO: Should we do this in log space? Sum up approximate log(prime) for each divisor?
-    y_smooth_factors: Vec<BigUint>,
+    y_smooth_factors: Vec<f64>,
 
     xs_with_smooth_ys: Vec<BigUint>,
+}
+
+struct SieveFactorInfo {
+    prime_bits: f64,
+    prime_power: usize,
+    /// The next numbers to be sieved with this factor, encoded as offsets relative to
+    /// `min_candidate`. There is one entry for each square root of `n` mod `prime_power`.
+    next_offsets: Vec<usize>,
 }
 
 impl Sieve {
     fn new(n: &BigUint, base: Vec<usize>, max_divisor: usize) -> Self {
         let min_candidate = n.sqrt() + BigUint::one();
-        let min_candidate_bits = min_candidate.bits();
 
         let mut base_progress = vec![];
-        for p in base {
+        for &p in &base {
+            let p_bits = f64::from(p as u32).log2();
             let powers = (1u32..)
                 .map(|exp| (exp, p.pow(exp)))
                 .take_while(|&(_, power)| power <= max_divisor);
             for (exp, power) in powers {
                 let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
                 let n_reduced = (n % power).to_usize().unwrap();
-                let offsets: Vec<_> = all_sqrts_mod_prime_power(n_reduced, p, exp as usize)
+                let square_roots: Vec<_> = all_sqrts_mod_prime_power(n_reduced, p, exp as usize)
                     .into_iter()
                     .map(|root| zn_sub(root, min_candidate_reduced, power))
                     .collect();
-                if !offsets.is_empty() {
-                    base_progress.push((p, power, offsets));
+                if !square_roots.is_empty() {
+                    base_progress.push(SieveFactorInfo {
+                        prime_bits: p_bits,
+                        prime_power: power,
+                        next_offsets: square_roots,
+                    });
                 }
             }
         }
@@ -199,8 +215,8 @@ impl Sieve {
         Self {
             n: n.clone(),
             min_candidate,
-            min_candidate_bits,
-            base_progress,
+            base,
+            factors: base_progress,
             y_smooth_factors: vec![],
             xs_with_smooth_ys: vec![],
         }
@@ -211,26 +227,31 @@ impl Sieve {
     }
 
     /// Expands the sieve to the given size, i.e. the maximum offset relative to `min_candidate`.
+    #[instrument(skip(self))]
     fn expand_to(&mut self, to: usize) {
         let from = self.y_smooth_factors.len();
-        for _x in from..to {
-            self.y_smooth_factors.push(BigUint::one());
-        }
+        assert!(to >= from);
 
-        for (prime, power, ref mut offsets) in self.base_progress.iter_mut() {
-            for offset in offsets {
+        self.y_smooth_factors.resize(to, 0f64);
+
+        let min_candidate_f64 = f64::from_str(&self.min_candidate.to_string()).unwrap();
+        let n_f64 = f64::from_str(&self.n.to_string()).unwrap();
+
+        for ref mut factor in self.factors.iter_mut() {
+            for offset in &mut factor.next_offsets {
                 while *offset < to {
-                    let candidate = &mut self.y_smooth_factors[*offset];
-                    *candidate *= *prime;
-                    // TODO: Improve this filter.
-                    if candidate.bits() >= self.min_candidate_bits {
+                    let x_f64 = min_candidate_f64 + *offset as f64;
+                    let y_f64 = x_f64 * x_f64 - n_f64;
+                    let target_bits = y_f64.log2();
+                    let current_factor_bits = &mut self.y_smooth_factors[*offset];
+                    *current_factor_bits += factor.prime_bits;
+                    if *current_factor_bits + 0.5 >= target_bits {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         let y = &x * &x - &self.n;
-                        if *candidate == y {
-                            self.xs_with_smooth_ys.push(x);
-                        }
+                        assert!(exponent_vec(y, &self.base).is_some(), "false positive");
+                        self.xs_with_smooth_ys.push(x);
                     }
-                    *offset += *power;
+                    *offset += factor.prime_power;
                 }
             }
         }
@@ -243,7 +264,6 @@ mod tests {
     use core::str::FromStr;
 
     use num_bigint::BigUint;
-    use num_traits::One;
     use tracing::level_filters::LevelFilter;
     use tracing_forest::ForestLayer;
     use tracing_subscriber::layer::SubscriberExt;
@@ -264,26 +284,26 @@ mod tests {
             &sieve.y_smooth_factors,
             &[
                 // We start from x=11.
-                BigUint::from(3u8),
-                BigUint::one(),
-                BigUint::from(3u8),
-                BigUint::from(3u8),
-                BigUint::one(),
-                BigUint::from(3u8),
-                BigUint::from(27u8),
-                BigUint::one(),
-                BigUint::from(9u8),
-                BigUint::from(3u8),
-                BigUint::one(),
-                BigUint::from(3u8),
-                BigUint::from(3u8),
-                BigUint::from(17u8),
-                BigUint::from(3u8),
-                BigUint::from(9u8),
-                BigUint::from(17u8),
-                BigUint::from(9u8),
-                BigUint::from(3u8),
-                BigUint::one(),
+                3f64.log2(),
+                0f64,
+                3f64.log2(),
+                3f64.log2(),
+                0f64,
+                3f64.log2(),
+                3f64.log2() + 3f64.log2() + 3f64.log2(),
+                0f64,
+                3f64.log2() + 3f64.log2(),
+                3f64.log2(),
+                0f64,
+                3f64.log2(),
+                3f64.log2(),
+                17f64.log2(),
+                3f64.log2(),
+                3f64.log2() + 3f64.log2(),
+                17f64.log2(),
+                3f64.log2() + 3f64.log2(),
+                3f64.log2(),
+                0f64,
             ]
         );
     }
@@ -305,7 +325,7 @@ mod tests {
     #[test]
     fn factor_124833796738414950008916111503921() {
         let env_filter = EnvFilter::builder()
-            .with_default_directive(LevelFilter::DEBUG.into())
+            .with_default_directive(LevelFilter::INFO.into())
             .from_env_lossy();
 
         Registry::default()

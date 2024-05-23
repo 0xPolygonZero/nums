@@ -2,6 +2,7 @@ use core::convert::identity;
 use core::iter;
 
 use num_bigint::BigUint;
+use tracing::instrument;
 
 use crate::bitvec::BitVec;
 use crate::gaussian_elimination::is_in_row_echelon_form;
@@ -12,6 +13,7 @@ use crate::util::transpose;
 ///
 /// Note that `solution_index = 0` will give the trivial solution. To enumerate nontrivial
 /// solutions, start with `solution_index = 1` and increment until `None` is returned.
+#[instrument(skip(rows))]
 pub(crate) fn nullspace_member(rows: &[BitVec], solution_index: &BigUint) -> Option<BitVec> {
     assert!(is_in_row_echelon_form(rows), "not RE: {:?}", rows);
 
