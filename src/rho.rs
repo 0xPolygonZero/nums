@@ -3,13 +3,11 @@ use crate::CompositeSplitter;
 use num_bigint::BigUint;
 use num_integer::{gcd, Integer};
 use num_traits::One;
-use tracing::instrument;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PollardRho;
 
 impl CompositeSplitter for PollardRho {
-    #[instrument]
     fn divisor(&self, n: &BigUint) -> BigUint {
         if n.is_even() {
             return BigUint::from(2u8);

@@ -22,7 +22,6 @@ const MARGIN: usize = 20;
 pub struct QuadraticSieve;
 
 impl CompositeSplitter for QuadraticSieve {
-    #[instrument]
     fn divisor(&self, n: &BigUint) -> BigUint {
         event!(Level::INFO, "Splitting {}", n);
         let q = |x: &BigUint| x * x - n;
@@ -57,7 +56,7 @@ impl CompositeSplitter for QuadraticSieve {
         let mut sieve_iteration = 0usize;
         while sieve.xs_with_smooth_ys.len() < min_smooth_ys {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 "Sieving {}, found {} of {}",
                 sieve_iteration,
                 sieve.xs_with_smooth_ys.len(),
@@ -243,13 +242,23 @@ impl Sieve {
                 while *offset < to {
                     let x_f64 = min_candidate_f64 + *offset as f64;
                     let y_f64 = x_f64 * x_f64 - n_f64;
+
+                    assert_ne!(y_f64, 0.0);
                     let target_bits = y_f64.log2();
                     let current_factor_bits = &mut self.y_smooth_factors[*offset];
                     *current_factor_bits += factor.prime_bits;
                     if *current_factor_bits + 0.5 >= target_bits {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         let y = &x * &x - &self.n;
-                        assert!(exponent_vec(y, &self.base).is_some(), "false positive");
+                        assert!(
+                            exponent_vec(y.clone(), &self.base).is_some(),
+                            "false positive n={} x={} y={} current_factor_bits={} target_bits={}",
+                            &self.n,
+                            &x,
+                            &y,
+                            current_factor_bits,
+                            target_bits
+                        );
                         self.xs_with_smooth_ys.push(x);
                     }
                     *offset += factor.prime_power;
