@@ -15,7 +15,15 @@ use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
 use crate::{CompositeSplitter, SieveOfEratosthenes};
 
-const MARGIN: usize = 20;
+/// The number of extra smooth numbers to find before stopping the smooth number search and
+/// proceeding to the nullspace search. This extra margin ensures a large nullspace, making it very
+/// unlikely that all solutions are trivial ones.
+const EXTRA_SMOOTH_YS: usize = 20;
+
+/// The (exclusive) maximum exponent on a prime to consider when searching for smooth numbers.
+/// We might not want to consider huge powers like 2^32, as that would mean a sieving step with
+/// poor locality which only adds a single bit.
+const MAX_EXPONENT: u32 = 10;
 
 /// The quadratic sieve factorization algorithm.
 #[derive(Copy, Clone, Debug)]
@@ -51,8 +59,8 @@ impl CompositeSplitter for QuadraticSieve {
             }
         }
 
-        let min_smooth_ys = base.len() + MARGIN;
-        let mut sieve = Sieve::new(n, base.clone(), max_base_prime);
+        let min_smooth_ys = base.len() + EXTRA_SMOOTH_YS;
+        let mut sieve = Sieve::new(n, base.clone());
         let mut sieve_iteration = 0usize;
         while sieve.xs_with_smooth_ys.len() < min_smooth_ys {
             event!(
@@ -186,15 +194,16 @@ struct SieveFactorInfo {
 }
 
 impl Sieve {
-    fn new(n: &BigUint, base: Vec<usize>, max_divisor: usize) -> Self {
+    fn new(n: &BigUint, base: Vec<usize>) -> Self {
         let min_candidate = n.sqrt() + BigUint::one();
 
         let mut base_progress = vec![];
         for &p in &base {
             let p_bits = f64::from(p as u32).log2();
-            let powers = (1u32..)
-                .map(|exp| (exp, p.pow(exp)))
-                .take_while(|&(_, power)| power <= max_divisor);
+            let powers = (1u32..MAX_EXPONENT)
+                .map(|exp| (exp, p.checked_pow(exp)))
+                .take_while(|&(_, power)| power.is_some())
+                .map(|(exp, power)| (exp, power.unwrap()));
             for (exp, power) in powers {
                 let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
                 let n_reduced = (n % power).to_usize().unwrap();
@@ -250,16 +259,15 @@ impl Sieve {
                     if *current_factor_bits + 0.5 >= target_bits {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         let y = &x * &x - &self.n;
-                        assert!(
-                            exponent_vec(y.clone(), &self.base).is_some(),
-                            "false positive n={} x={} y={} current_factor_bits={} target_bits={}",
-                            &self.n,
-                            &x,
-                            &y,
-                            current_factor_bits,
-                            target_bits
-                        );
-                        self.xs_with_smooth_ys.push(x);
+                        let actually_smooth = exponent_vec(y.clone(), &self.base).is_some();
+                        if actually_smooth {
+                            event!(Level::DEBUG, "Found smooth y = {:?}", &y);
+                        } else {
+                            event!(Level::DEBUG, "False positive y = {:?}", &y);
+                        }
+                        if actually_smooth {
+                            self.xs_with_smooth_ys.push(x);
+                        }
                     }
                     *offset += factor.prime_power;
                 }
@@ -287,7 +295,7 @@ mod tests {
     #[test]
     fn test_sieve() {
         let n = BigUint::from(100u8);
-        let mut sieve = Sieve::new(&n, vec![3, 17], 30);
+        let mut sieve = Sieve::new(&n, vec![3, 17]);
         sieve.expand_to(20);
         assert_eq!(&sieve.min_candidate, &BigUint::from(11u8));
         assert_eq!(
