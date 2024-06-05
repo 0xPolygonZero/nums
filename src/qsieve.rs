@@ -244,19 +244,28 @@ impl Sieve {
         self.y_smooth_factors.resize(to, 0f64);
 
         let min_candidate_f64 = f64::from_str(&self.min_candidate.to_string()).unwrap();
-        let n_f64 = f64::from_str(&self.n.to_string()).unwrap();
+
+        // See the comments on target_bits below. We add 1 to account for multiplication by 2. We
+        // subtract 0.5 to create a buffer for floating point errors. A incomplete y (whose factors)
+        // have not all been discovered will be short by at least one bit (ignoring the looseness
+        // of our target), so 0.5 seems like a good middle ground.
+        let base_target_bits = min_candidate_f64.log2() + (1.0 - 0.5);
 
         for ref mut factor in self.factors.iter_mut() {
             for offset in &mut factor.next_offsets {
                 while *offset < to {
-                    let x_f64 = min_candidate_f64 + *offset as f64;
-                    let y_f64 = x_f64 * x_f64 - n_f64;
-
-                    assert_ne!(y_f64, 0.0);
-                    let target_bits = y_f64.log2();
+                    // We want some rough lower bound on y that's easy to compute. Note that
+                    // y = (min_candidate + offset)^2 - n
+                    //   = min_candidate^2 + offset^2 + 2 min_candidate off - n
+                    //   = (min_candidate^2 - n) + offset^2 + 2 min_candidate offset
+                    // The dominant term here should generally be 2 min_candidate offset; we will
+                    // treat this as our target. So we have
+                    //      y > 2 min_candidate offset
+                    // log(y) > 1 + log(min_candidate) + log(offset)
+                    let target_bits = base_target_bits + (*offset as f64).log2();
                     let current_factor_bits = &mut self.y_smooth_factors[*offset];
                     *current_factor_bits += factor.prime_bits;
-                    if *current_factor_bits + 0.5 >= target_bits {
+                    if *current_factor_bits >= target_bits {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         let y = &x * &x - &self.n;
                         let actually_smooth = exponent_vec(y.clone(), &self.base).is_some();
