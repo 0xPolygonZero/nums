@@ -107,6 +107,7 @@ impl CompositeSplitter for QuadraticSieve {
             let selection = nullspace_member(&sparse_y_parity_vecs_t, &solution_index)
                 .expect("No more solutions to try; need to expand margin");
             event!(Level::INFO, "Selection: {:?}", &selection);
+            assert_eq!(selection.len(), xs_with_smooth_ys.len());
 
             let mut prod_selected_xs = BigUint::one();
             let mut prod_selected_ys = BigUint::one();

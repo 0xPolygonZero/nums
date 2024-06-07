@@ -27,6 +27,7 @@ impl BitVec {
     #[must_use]
     #[inline]
     pub fn get(&self, i: usize) -> bool {
+        assert!(i < self.len);
         let byte = self.bytes[i / 8];
         byte & (1 << (i % 8)) != 0
     }

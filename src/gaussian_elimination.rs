@@ -13,7 +13,11 @@ pub(crate) fn gaussian_elimination(rows: &mut [BitVec]) {
             .min_by_key(|&r| rows[r].leading_zeros())
             .unwrap();
         rows.swap(row, next_row);
+
         let pivot = rows[row].leading_zeros();
+        if pivot == rows[row].len() {
+            return; // Any remaining rows are zero.
+        }
 
         for r in row + 1..height {
             if rows[r].get(pivot) {
