@@ -7,6 +7,9 @@ use num_bigint::BigUint;
 use num_integer::Integer;
 use num_traits::One;
 
+// This currently ignores some edge cases, namely p = 2, and n being a multiple of some power of p.
+// See https://math.stackexchange.com/a/94882/11251
+// However, these probably aren't important based on the current use of this function in QS.
 #[must_use]
 pub(crate) fn all_sqrts_mod_prime_power(n: usize, p: usize, k: usize) -> Vec<usize> {
     if let Some(root) = sqrt_mod_prime_power(n, p, k) {
