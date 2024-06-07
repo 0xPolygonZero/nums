@@ -13,7 +13,7 @@ use crate::field::{all_sqrts_mod_prime_power, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
-use crate::{CompositeSplitter, SieveOfEratosthenes};
+use crate::{CompositeSplitter, FactoredInteger, SieveOfEratosthenes};
 
 /// The number of extra smooth numbers to find before stopping the smooth number search and
 /// proceeding to the nullspace search. This extra margin ensures a large nullspace, making it very
@@ -32,12 +32,14 @@ pub struct QuadraticSieve;
 impl CompositeSplitter for QuadraticSieve {
     fn divisor(&self, n: &BigUint) -> BigUint {
         event!(Level::INFO, "Splitting {}", n);
-        let q = |x: &BigUint| x * x - n;
+        let f = |x: &BigUint| x * x - n;
 
         let n_float = biguint_to_f64(n);
         let ln_n = n_float.ln();
-        // Optimal bound on primes in our base is around exp(sqrt(log(n) * log(log(n))) / 2).
-        let max_base_prime = ((ln_n * ln_n.ln()).sqrt() / 2.0).exp();
+
+        // Optimal bound on primes in our base is around exp(sqrt(log(n) * log(log(n))) / 2)?
+        // In practice, we multiply by 2 based on experiments.
+        let max_base_prime = 2.0 * ((ln_n * ln_n.ln()).sqrt() / 2.0).exp();
         // Make sure our base isn't tiny.
         let max_base_prime = (max_base_prime as usize).max(300);
         event!(Level::INFO, "Using base with max of {}", max_base_prime);
@@ -59,24 +61,30 @@ impl CompositeSplitter for QuadraticSieve {
             }
         }
 
-        let min_smooth_ys = base.len() + EXTRA_SMOOTH_YS;
         let mut sieve = Sieve::new(n, base.clone());
         let mut sieve_iteration = 0usize;
-        while sieve.xs_with_smooth_ys.len() < min_smooth_ys {
+        loop {
+            let primes_with_some_odd_exp = sieve.base_counts.iter().filter(|&&c| c > 0).count();
+            let min_smooth_ys = primes_with_some_odd_exp + EXTRA_SMOOTH_YS;
+            if sieve.xs_with_smooth_ys.len() >= min_smooth_ys {
+                break;
+            }
             event!(
                 Level::DEBUG,
-                "Sieving {}, found {} of {}",
+                "Sieving {}, found {} of {} (may grow to {})",
                 sieve_iteration,
                 sieve.xs_with_smooth_ys.len(),
-                min_smooth_ys
+                min_smooth_ys,
+                base.len() + EXTRA_SMOOTH_YS
             );
+            // event!(Level::DEBUG, "base_counts {:?}", &sieve.base_counts);
             // TODO: To improve it for tiny inputs, maybe do some multiple of base.len()?
             sieve.expand_by(1 << 21);
             sieve_iteration += 1;
         }
 
         let xs_with_smooth_ys = sieve.xs_with_smooth_ys;
-        let smooth_ys: Vec<_> = xs_with_smooth_ys.iter().map(q).collect();
+        let smooth_ys: Vec<_> = xs_with_smooth_ys.iter().map(f).collect();
 
         let sparse_y_parity_vecs: Vec<_> = smooth_ys
             .into_iter()
@@ -105,7 +113,7 @@ impl CompositeSplitter for QuadraticSieve {
             for (i, x) in xs_with_smooth_ys.iter().enumerate() {
                 if selection.get(i) {
                     prod_selected_xs *= x;
-                    prod_selected_ys *= q(x);
+                    prod_selected_ys *= f(x);
                 }
             }
             assert!(is_square(&prod_selected_ys), "RHS is not a square");
@@ -172,6 +180,8 @@ struct Sieve {
     n: BigUint,
     min_candidate: BigUint,
     base: Vec<usize>,
+    /// How often each base prime occurs in smooth ys with an odd exponent.
+    base_counts: Vec<usize>,
 
     /// For each base element or power thereof, the next numbers to be sieved with it, encoded as
     /// offsets relative to `min_candidate`. For odd primes, there are two such offsets, each
@@ -221,10 +231,12 @@ impl Sieve {
             }
         }
 
+        let base_counts = vec![0; base.len()];
         Self {
             n: n.clone(),
             min_candidate,
             base,
+            base_counts,
             factors: base_progress,
             y_smooth_factors: vec![],
             xs_with_smooth_ys: vec![],
@@ -246,9 +258,9 @@ impl Sieve {
         let min_candidate_f64 = f64::from_str(&self.min_candidate.to_string()).unwrap();
 
         // See the comments on target_bits below. We add 1 to account for multiplication by 2. We
-        // subtract 0.5 to create a buffer for floating point errors. A incomplete y (whose factors)
-        // have not all been discovered will be short by at least one bit (ignoring the looseness
-        // of our target), so 0.5 seems like a good middle ground.
+        // subtract 0.5 to create a buffer for floating point errors. An incomplete y (whose factors
+        // have not all been discovered) will be short by at least one bit (ignoring the looseness
+        // of our target), so 0.5 is the midpoint in a sense.
         let base_target_bits = min_candidate_f64.log2() + (1.0 - 0.5);
 
         for ref mut factor in self.factors.iter_mut() {
@@ -268,14 +280,28 @@ impl Sieve {
                     if *current_factor_bits >= target_bits {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         let y = &x * &x - &self.n;
-                        let actually_smooth = exponent_vec(y.clone(), &self.base).is_some();
-                        if actually_smooth {
-                            event!(Level::DEBUG, "Found smooth y = {:?}", &y);
+                        let exponents = exponent_vec(y.clone(), &self.base);
+                        if let Some(exponents) = exponents {
+                            self.xs_with_smooth_ys.push(x);
+
+                            for (i, exp) in exponents.iter().enumerate() {
+                                self.base_counts[i] += exp % 2;
+                            }
+
+                            let factored = FactoredInteger::from_ordered_factor_counts(
+                                self.base
+                                    .iter()
+                                    .zip(exponents)
+                                    .filter(|(_p, exp)| *exp != 0)
+                                    .map(|(p, exp)| (BigUint::from(*p), exp))
+                                    .collect(),
+                            );
+                            event!(Level::DEBUG, "Found smooth y = {:?} = {:?}", &y, factored);
+
+                            // Reset to make sure we don't revisit this y later.
+                            *current_factor_bits = 0.0;
                         } else {
                             event!(Level::DEBUG, "False positive y = {:?}", &y);
-                        }
-                        if actually_smooth {
-                            self.xs_with_smooth_ys.push(x);
                         }
                     }
                     *offset += factor.prime_power;
