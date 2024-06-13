@@ -13,6 +13,10 @@ Factorization:
 - [x] Trial division
 - [x] Pollard's rho
 - [x] Quadratic sieve
+    - [ ] SIQS (or other methods to mitigate growth)
+    - [ ] Preprocessing to shrink exponent matrix, looking for primes that occur 0, 1 or 2 times
+    - [ ] Large prime optimization
+    - [ ] Replace Guassian elimination with block-Lanczos or block-Wiedemann nullspace algorithm
 - [ ] General number sieve
 
 

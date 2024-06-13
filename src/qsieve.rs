@@ -4,12 +4,12 @@ use alloc::vec::Vec;
 use core::str::FromStr;
 
 use num_bigint::BigUint;
-use num_integer::Integer;
+use num_integer::{Integer, Roots};
 use num_traits::{One, ToPrimitive, Zero};
 use tracing::{event, instrument, Level};
 
 use crate::bitvec::BitVec;
-use crate::field::{all_sqrts_mod_prime_power, zn_sub};
+use crate::field::{all_sqrts_mod_prime_power, zn_sqrt, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
 use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
@@ -19,11 +19,6 @@ use crate::{CompositeSplitter, FactoredInteger, SieveOfEratosthenes};
 /// proceeding to the nullspace search. This extra margin ensures a large nullspace, making it very
 /// unlikely that all solutions are trivial ones.
 const EXTRA_SMOOTH_YS: usize = 20;
-
-/// The (exclusive) maximum exponent on a prime to consider when searching for smooth numbers.
-/// We might not want to consider huge powers like 2^32, as that would mean a sieving step with
-/// poor locality which only adds a single bit.
-const MAX_EXPONENT: u32 = 10;
 
 /// The quadratic sieve factorization algorithm.
 #[derive(Copy, Clone, Debug)]
@@ -70,18 +65,18 @@ impl CompositeSplitter for QuadraticSieve {
                 break;
             }
             event!(
-                Level::DEBUG,
+                Level::INFO,
                 "Sieving {}, found {} of {} (may grow to {})",
                 sieve_iteration,
                 sieve.xs_with_smooth_ys.len(),
                 min_smooth_ys,
                 base.len() + EXTRA_SMOOTH_YS
             );
-            // event!(Level::DEBUG, "base_counts {:?}", &sieve.base_counts);
             // TODO: To improve it for tiny inputs, maybe do some multiple of base.len()?
             sieve.expand_by(1 << 21);
             sieve_iteration += 1;
         }
+        event!(Level::INFO, "base_counts {:?}", &sieve.base_counts);
 
         let xs_with_smooth_ys = sieve.xs_with_smooth_ys;
         let smooth_ys: Vec<_> = xs_with_smooth_ys.iter().map(f).collect();
@@ -184,51 +179,83 @@ struct Sieve {
     /// How often each base prime occurs in smooth ys with an odd exponent.
     base_counts: Vec<usize>,
 
-    /// For each base element or power thereof, the next numbers to be sieved with it, encoded as
-    /// offsets relative to `min_candidate`. For odd primes, there are two such offsets, each
-    /// corresponding to one of two square roots mod the prime.
-    factors: Vec<SieveFactorInfo>,
+    all_odd_power_divisors: Vec<DivisorInfo>,
+
+    /// Information about the divisors that we're actually sieving. In a perfectly precise sieve,
+    /// this would just be the primes in our factor base and all powers thereof, but in our
+    /// implementation it's a bit different, e.g. we don't sieve small divisors.
+    sieve_divisors: Vec<SieveFactorInfo>,
 
     /// For each candidate, contains whatever smooth factors we've encountered so far.
     /// The `i`th entry is for `min_candidate + i`.
-    y_smooth_factors: Vec<f64>,
+    y_smooth_bits: Vec<u8>,
 
     xs_with_smooth_ys: Vec<BigUint>,
 }
 
+#[derive(Debug)]
 struct SieveFactorInfo {
-    prime_bits: f64,
-    prime_power: usize,
+    p: usize,
+    p_bits: u8,
     /// The next numbers to be sieved with this factor, encoded as offsets relative to
-    /// `min_candidate`. There is one entry for each square root of `n` mod `prime_power`.
-    next_offsets: Vec<usize>,
+    /// `min_candidate`. There is one entry for each square root of `n` mod `p`.
+    next_offsets: [usize; 2],
+}
+
+#[derive(Debug)]
+struct DivisorInfo {
+    p: usize,
+    power: usize,
+    /// The square roots of `n`, minus `min_candidate`, mod `p^k`.
+    // todo: always 2, use array
+    offsets: Vec<usize>,
 }
 
 impl Sieve {
     fn new(n: &BigUint, base: Vec<usize>) -> Self {
         let min_candidate = n.sqrt() + BigUint::one();
+        let min_sieve_divisor = base.last().unwrap().sqrt().sqrt().max(7);
 
-        let mut base_progress = vec![];
-        for &p in &base {
-            let p_bits = f64::from(p as u32).log2();
-            let powers = (1u32..MAX_EXPONENT)
-                .map(|exp| (exp, p.checked_pow(exp)))
-                .take_while(|&(_, power)| power.is_some())
-                .map(|(exp, power)| (exp, power.unwrap()));
-            for (exp, power) in powers {
-                let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
-                let n_reduced = (n % power).to_usize().unwrap();
-                let square_roots: Vec<_> = all_sqrts_mod_prime_power(n_reduced, p, exp as usize)
-                    .into_iter()
-                    .map(|root| zn_sub(root, min_candidate_reduced, power))
-                    .collect();
-                if !square_roots.is_empty() {
-                    base_progress.push(SieveFactorInfo {
-                        prime_bits: p_bits,
-                        prime_power: power,
-                        next_offsets: square_roots,
+        let mut all_odd_power_divisors = vec![];
+        let mut sieve_divisors = vec![];
+        assert_eq!(base[0], 2);
+        for &p in &base[1..] {
+            let p_bits = f64::from(p as u32).log2() as u8 + 1;
+            let min_candidate_reduced = (&min_candidate % p).to_usize().unwrap();
+            let n_reduced = (n % p).to_usize().unwrap();
+            if let Some(sqrt) = zn_sqrt(n_reduced, p) {
+                let sqrts = [sqrt, p - sqrt];
+
+                if p >= min_sieve_divisor {
+                    let next_offsets = sqrts.map(|root| zn_sub(root, min_candidate_reduced, p));
+                    sieve_divisors.push(SieveFactorInfo {
+                        p,
+                        p_bits,
+                        next_offsets,
                     });
                 }
+
+                let divisors = (1u32..)
+                    .map(|exp| (exp, p.checked_pow(exp)))
+                    .take_while(|&(_, power)| power.is_some())
+                    .map(|(exp, power)| {
+                        let power = power.unwrap();
+                        let min_candidate_reduced = (&min_candidate % power).to_usize().unwrap();
+                        let n_reduced = (n % power).to_usize().unwrap();
+                        let power_sqrts = all_sqrts_mod_prime_power(n_reduced, p, exp as usize);
+                        if exp == 1 {
+                            assert_eq!(power_sqrts, sqrts.to_vec());
+                        }
+                        DivisorInfo {
+                            p,
+                            power,
+                            offsets: power_sqrts
+                                .into_iter()
+                                .map(|root| zn_sub(root, min_candidate_reduced, power))
+                                .collect(),
+                        }
+                    });
+                all_odd_power_divisors.extend(divisors);
             }
         }
 
@@ -238,23 +265,24 @@ impl Sieve {
             min_candidate,
             base,
             base_counts,
-            factors: base_progress,
-            y_smooth_factors: vec![],
+            all_odd_power_divisors,
+            sieve_divisors,
+            y_smooth_bits: vec![],
             xs_with_smooth_ys: vec![],
         }
     }
 
     fn expand_by(&mut self, amount: usize) {
-        self.expand_to(self.y_smooth_factors.len() + amount);
+        self.expand_to(self.y_smooth_bits.len() + amount);
     }
 
     /// Expands the sieve to the given size, i.e. the maximum offset relative to `min_candidate`.
     #[instrument(skip(self))]
     fn expand_to(&mut self, to: usize) {
-        let from = self.y_smooth_factors.len();
+        let from = self.y_smooth_bits.len();
         assert!(to >= from);
 
-        self.y_smooth_factors.resize(to, 0f64);
+        self.y_smooth_bits.resize(to, 0);
 
         let min_candidate_f64 = f64::from_str(&self.min_candidate.to_string()).unwrap();
 
@@ -262,10 +290,12 @@ impl Sieve {
         // subtract 0.5 to create a buffer for floating point errors. An incomplete y (whose factors
         // have not all been discovered) will be short by at least one bit (ignoring the looseness
         // of our target), so 0.5 is the midpoint in a sense.
-        let base_target_bits = min_candidate_f64.log2() + (1.0 - 0.5);
+        let base_target_bits = min_candidate_f64.log2() as u8 + 1;
 
-        for ref mut factor in self.factors.iter_mut() {
-            for offset in &mut factor.next_offsets {
+        for factor_idx in 0..self.sieve_divisors.len() {
+            let factor = &self.sieve_divisors[factor_idx];
+            let mut offsets = factor.next_offsets;
+            for offset in &mut offsets {
                 while *offset < to {
                     // We want some rough lower bound on y that's easy to compute. Note that
                     // y = (min_candidate + offset)^2 - n
@@ -275,14 +305,22 @@ impl Sieve {
                     // treat this as our target. So we have
                     //      y > 2 min_candidate offset
                     // log(y) > 1 + log(min_candidate) + log(offset)
-                    let target_bits = base_target_bits + (*offset as f64).log2();
-                    let current_factor_bits = &mut self.y_smooth_factors[*offset];
-                    *current_factor_bits += factor.prime_bits;
-                    if *current_factor_bits >= target_bits {
+                    let target_bits = base_target_bits + (*offset as f64).log2() as u8;
+                    self.y_smooth_bits[*offset] += factor.p_bits;
+                    if self.y_smooth_bits[*offset] * 3 >= target_bits * 2 {
                         let x = &self.min_candidate + BigUint::from(*offset);
+                        // TODO: could optimize as
+                        //     y = min_candidate^2 - n + offset (2 min_candidate + offset)
+                        // with min_candidate^2 - n precomputed
+                        // May be unnecessary if we do this in log space.
                         let y = &x * &x - &self.n;
-                        let exponents = exponent_vec(y.clone(), &self.base);
-                        if let Some(exponents) = exponents {
+
+                        let y_smooth_part =
+                            self.y_smooth_part(*offset, y.trailing_zeros().unwrap());
+
+                        if y_smooth_part == y {
+                            let exponents = exponent_vec(y.clone(), &self.base)
+                                .expect("already passed fast smoothness check");
                             self.xs_with_smooth_ys.push(x);
 
                             for (i, exp) in exponents.iter().enumerate() {
@@ -300,15 +338,33 @@ impl Sieve {
                             event!(Level::DEBUG, "Found smooth y = {:?} = {:?}", &y, factored);
 
                             // Reset to make sure we don't revisit this y later.
-                            *current_factor_bits = 0.0;
+                            self.y_smooth_bits[*offset] = 0;
                         } else {
                             event!(Level::DEBUG, "False positive y = {:?}", &y);
                         }
                     }
-                    *offset += factor.prime_power;
+                    *offset += factor.p;
                 }
             }
+            self.sieve_divisors[factor_idx].next_offsets = offsets;
         }
+    }
+
+    fn y_smooth_part(&self, offset: usize, factors_of_two: u64) -> BigUint {
+        // TODO: Do in log space, with f64 or as much precision as needed,
+        // so there's no bignum math. Don't necessarily need 100% accuracy yet, just
+        // fewer false positives & ideally no false negatives.
+        let mut y_smooth_part = BigUint::one() << factors_of_two;
+        for other_factor in &self.all_odd_power_divisors {
+            let diff_0 = other_factor.offsets[0] as i64 - offset as i64;
+            let diff_1 = other_factor.offsets[1] as i64 - offset as i64;
+            let divides = diff_0.is_multiple_of(&(other_factor.power as i64))
+                || diff_1.is_multiple_of(&(other_factor.power as i64));
+            if divides {
+                y_smooth_part *= other_factor.p;
+            }
+        }
+        y_smooth_part
     }
 }
 
@@ -335,7 +391,7 @@ mod tests {
         sieve.expand_to(20);
         assert_eq!(&sieve.min_candidate, &BigUint::from(11u8));
         assert_eq!(
-            &sieve.y_smooth_factors,
+            &sieve.y_smooth_bits,
             &[
                 // We start from x=11.
                 3f64.log2(),

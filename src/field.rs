@@ -13,7 +13,6 @@ use num_traits::One;
 #[must_use]
 pub(crate) fn all_sqrts_mod_prime_power(n: usize, p: usize, k: usize) -> Vec<usize> {
     if let Some(root) = sqrt_mod_prime_power(n, p, k) {
-        // TODO: Need to double check this logic, are we missing some roots?
         if p == 2 {
             vec![root]
         } else {
@@ -95,8 +94,7 @@ pub(crate) fn zn_sqrt(n: usize, p: usize) -> Option<usize> {
 
             let mut b = c;
             for _ in 0..m - i - 1 {
-                b *= b;
-                b %= p;
+                b = zn_square(b, p);
             }
 
             m = i;
@@ -149,11 +147,9 @@ pub(crate) fn zn_pow(x: usize, y: usize, n: usize) -> usize {
     let mut product = 1;
     for j in 0..bits_usize(y) {
         if (y >> j & 1) != 0 {
-            product *= current;
-            product %= n;
+            product = zn_mul(product, current, n);
         }
-        current *= current;
-        current %= n;
+        current = zn_square(current, n);
     }
     product
 }
@@ -184,13 +180,13 @@ mod tests {
 
         let mut squares = BitVec::new(P);
         for x in 0..P {
-            squares.set(x * x % P, true);
+            squares.set(zn_square(x, P), true);
         }
 
         for x in 0..P {
             let opt_root = zn_sqrt(x, P);
             if let Some(root) = opt_root {
-                assert_eq!(root * root % P, x);
+                assert_eq!(zn_square(root, P), x);
             } else {
                 assert!(!squares.get(x));
             }
