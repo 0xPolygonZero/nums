@@ -2,6 +2,7 @@ use crate::traits::{CompositeSplitter, Factorizer, PrimalityTest};
 use crate::FactoredInteger;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
+use tracing::{event, Level};
 
 pub struct PrimalityTestFromFactorizer<F: Factorizer> {
     pub factorizer: F,
@@ -50,6 +51,8 @@ where
         }
 
         let (a, b) = self.composite_splitter.split(n);
+
+        event!(Level::INFO, "Found split: {} = {} * {}", n, &a, &b);
         assert!(!a.is_one());
         assert!(!b.is_one());
         assert_ne!(&a, n);
