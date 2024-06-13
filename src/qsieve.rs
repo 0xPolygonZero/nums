@@ -12,7 +12,9 @@ use crate::bitvec::BitVec;
 use crate::field::{all_sqrts_mod_prime_power, zn_sqrt, zn_sub};
 use crate::gaussian_elimination::gaussian_elimination;
 use crate::nullspace::nullspace_member;
-use crate::util::{biguint_to_f64, distance, is_quadratic_residue, is_square, transpose};
+use crate::util::{
+    biguint_to_f64, bits_usize, distance, is_quadratic_residue, is_square, transpose,
+};
 use crate::{CompositeSplitter, FactoredInteger, SieveOfEratosthenes};
 
 /// The number of extra smooth numbers to find before stopping the smooth number search and
@@ -33,8 +35,8 @@ impl CompositeSplitter for QuadraticSieve {
         let ln_n = n_float.ln();
 
         // Optimal bound on primes in our base is around exp(sqrt(log(n) * log(log(n))) / 2)?
-        // In practice, we multiply by 2 based on experiments.
-        let max_base_prime = 2.0 * ((ln_n * ln_n.ln()).sqrt() / 2.0).exp();
+        // In practice, we multiply by a constant based on experiments.
+        let max_base_prime = 1.0 * ((ln_n * ln_n.ln()).sqrt() / 2.0).exp();
         // Make sure our base isn't tiny.
         let max_base_prime = (max_base_prime as usize).max(300);
         event!(Level::INFO, "Using base with max of {}", max_base_prime);
@@ -73,7 +75,7 @@ impl CompositeSplitter for QuadraticSieve {
                 base.len() + EXTRA_SMOOTH_YS
             );
             // TODO: To improve it for tiny inputs, maybe do some multiple of base.len()?
-            sieve.expand_by(1 << 21);
+            sieve.expand_by(1 << 23);
             sieve_iteration += 1;
         }
         event!(Level::INFO, "base_counts {:?}", &sieve.base_counts);
@@ -305,9 +307,9 @@ impl Sieve {
                     // treat this as our target. So we have
                     //      y > 2 min_candidate offset
                     // log(y) > 1 + log(min_candidate) + log(offset)
-                    let target_bits = base_target_bits + (*offset as f64).log2() as u8;
+                    let target_bits = base_target_bits + bits_usize(*offset) as u8;
                     self.y_smooth_bits[*offset] += factor.p_bits;
-                    if self.y_smooth_bits[*offset] * 3 >= target_bits * 2 {
+                    if self.y_smooth_bits[*offset] as u16 * 4 >= target_bits as u16 * 3 {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         // TODO: could optimize as
                         //     y = min_candidate^2 - n + offset (2 min_candidate + offset)
@@ -340,7 +342,12 @@ impl Sieve {
                             // Reset to make sure we don't revisit this y later.
                             self.y_smooth_bits[*offset] = 0;
                         } else {
-                            event!(Level::DEBUG, "False positive y = {:?}", &y);
+                            event!(
+                                Level::DEBUG,
+                                "False positive y = {:?}, y_smooth_part = {}",
+                                &y,
+                                y_smooth_part
+                            );
                         }
                     }
                     *offset += factor.p;
