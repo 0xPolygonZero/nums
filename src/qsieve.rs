@@ -78,7 +78,7 @@ impl CompositeSplitter for QuadraticSieve {
             sieve.expand_by(1 << 23);
             sieve_iteration += 1;
         }
-        event!(Level::INFO, "base_counts {:?}", &sieve.base_counts);
+        // event!(Level::DEBUG, "base_counts {:?}", &sieve.base_counts);
 
         let xs_with_smooth_ys = sieve.xs_with_smooth_ys;
         let smooth_ys: Vec<_> = xs_with_smooth_ys.iter().map(f).collect();
@@ -292,7 +292,9 @@ impl Sieve {
         // subtract 0.5 to create a buffer for floating point errors. An incomplete y (whose factors
         // have not all been discovered) will be short by at least one bit (ignoring the looseness
         // of our target), so 0.5 is the midpoint in a sense.
-        let base_target_bits = min_candidate_f64.log2() as u8 + 1;
+        let min_candidate_bits = min_candidate_f64.log2();
+        assert!(min_candidate_bits < 254.0, "won't fit in u8");
+        let base_target_bits = min_candidate_bits as u8 + 1;
 
         for factor_idx in 0..self.sieve_divisors.len() {
             let factor = &self.sieve_divisors[factor_idx];
@@ -307,8 +309,9 @@ impl Sieve {
                     // treat this as our target. So we have
                     //      y > 2 min_candidate offset
                     // log(y) > 1 + log(min_candidate) + log(offset)
-                    let target_bits = base_target_bits + bits_usize(*offset) as u8;
-                    self.y_smooth_bits[*offset] += factor.p_bits;
+                    let target_bits = base_target_bits.saturating_add(bits_usize(*offset) as u8);
+                    self.y_smooth_bits[*offset] =
+                        self.y_smooth_bits[*offset].saturating_add(factor.p_bits);
                     if self.y_smooth_bits[*offset] as u16 * 4 >= target_bits as u16 * 3 {
                         let x = &self.min_candidate + BigUint::from(*offset);
                         // TODO: could optimize as
