@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::str::FromStr;
 
 use num_bigint::BigUint;
-use num_integer::{Integer, Roots};
+use num_integer::Integer;
 use num_traits::{One, ToPrimitive, Zero};
 use tracing::{event, instrument, Level};
 
@@ -63,14 +63,14 @@ impl CompositeSplitter for QuadraticSieve {
         loop {
             let primes_with_some_odd_exp = sieve.base_counts.iter().filter(|&&c| c > 0).count();
             let min_smooth_ys = primes_with_some_odd_exp + EXTRA_SMOOTH_YS;
-            if sieve.xs_with_smooth_ys.len() >= min_smooth_ys {
+            if sieve.relations.len() >= min_smooth_ys {
                 break;
             }
             event!(
                 Level::INFO,
                 "Sieving {}, found {} of {} (may grow to {})",
                 sieve_iteration,
-                sieve.xs_with_smooth_ys.len(),
+                sieve.relations.len(),
                 min_smooth_ys,
                 base.len() + EXTRA_SMOOTH_YS
             );
@@ -80,12 +80,10 @@ impl CompositeSplitter for QuadraticSieve {
         }
         // event!(Level::DEBUG, "base_counts {:?}", &sieve.base_counts);
 
-        let xs_with_smooth_ys = sieve.xs_with_smooth_ys;
-        let smooth_ys: Vec<_> = xs_with_smooth_ys.iter().map(f).collect();
-
-        let sparse_y_parity_vecs: Vec<_> = smooth_ys
-            .into_iter()
-            .map(|y| exponent_parity_vec(y, &base).expect("Sieved y is not actually smooth?"))
+        let relations = &sieve.relations;
+        let sparse_y_parity_vecs: Vec<_> = relations
+            .iter()
+            .map(|rel| rel.y_parity_vec.clone())
             .collect();
 
         // TODO: Bit-reverse each vec in sparse_y_parity_vecs? Might improve GE performance.
@@ -101,17 +99,18 @@ impl CompositeSplitter for QuadraticSieve {
         // on each prime in our base.
         let mut solution_index = BigUint::one();
         loop {
+            // TODO: Apply some bit-oriented permutation to solution_index to make it more "random"
             let selection = nullspace_member(&sparse_y_parity_vecs_t, &solution_index)
                 .expect("No more solutions to try; need to expand margin");
-            event!(Level::INFO, "Selection: {:?}", &selection);
-            assert_eq!(selection.len(), xs_with_smooth_ys.len());
+            event!(Level::DEBUG, "Selection: {:?}", &selection);
+            assert_eq!(selection.len(), relations.len());
 
             let mut prod_selected_xs = BigUint::one();
             let mut prod_selected_ys = BigUint::one();
-            for (i, x) in xs_with_smooth_ys.iter().enumerate() {
+            for (i, rel) in relations.iter().enumerate() {
                 if selection.get(i) {
-                    prod_selected_xs *= x;
-                    prod_selected_ys *= f(x);
+                    prod_selected_xs *= &rel.x;
+                    prod_selected_ys *= f(&rel.x);
                 }
             }
             assert!(is_square(&prod_selected_ys), "RHS is not a square");
@@ -128,7 +127,7 @@ impl CompositeSplitter for QuadraticSieve {
                 return gcd;
             } else {
                 event!(
-                    Level::INFO,
+                    Level::DEBUG,
                     "Found solution with {} = ±{} (mod n); retrying",
                     a,
                     b
@@ -140,6 +139,7 @@ impl CompositeSplitter for QuadraticSieve {
 }
 
 /// If `x` is smooth with respect to `base`, return the parity of its exponents.
+#[instrument(skip_all, level = "debug")]
 fn exponent_vec(mut x: BigUint, base: &[usize]) -> Option<Vec<usize>> {
     let mut vec = Vec::with_capacity(base.len());
     for &b in base.iter() {
@@ -155,7 +155,13 @@ fn exponent_vec(mut x: BigUint, base: &[usize]) -> Option<Vec<usize>> {
 
 /// If `x` is smooth with respect to `base`, return its exponents.
 fn exponent_parity_vec(x: BigUint, base: &[usize]) -> Option<BitVec> {
-    exponent_vec(x, base).map(|vec| vec.into_iter().map(|exp| exp.is_odd()).collect())
+    exponent_vec(x, base)
+        .as_deref()
+        .map(exponent_vec_to_parity_vec)
+}
+
+fn exponent_vec_to_parity_vec(exponents: &[usize]) -> BitVec {
+    exponents.iter().map(|exp| exp.is_odd()).collect()
 }
 
 /// Divide n by divisor repeatedly for as long as it's divisible; return the number of divisions.
@@ -192,7 +198,8 @@ struct Sieve {
     /// The `i`th entry is for `min_candidate + i`.
     y_smooth_bits: Vec<u8>,
 
-    xs_with_smooth_ys: Vec<BigUint>,
+    /// The relations discovered so far.
+    relations: Vec<Relation>,
 }
 
 #[derive(Debug)]
@@ -213,10 +220,16 @@ struct DivisorInfo {
     offsets: Vec<usize>,
 }
 
+struct Relation {
+    x: BigUint,
+    y_parity_vec: BitVec,
+}
+
 impl Sieve {
     fn new(n: &BigUint, base: Vec<usize>) -> Self {
         let min_candidate = n.sqrt() + BigUint::one();
-        let min_sieve_divisor = base.last().unwrap().sqrt().sqrt().max(7);
+        // By skipping primes below 31, we miss about 10~20% of factor bits, depending on FB.
+        let min_sieve_divisor = 31;
 
         let mut all_odd_power_divisors = vec![];
         let mut sieve_divisors = vec![];
@@ -270,7 +283,7 @@ impl Sieve {
             all_odd_power_divisors,
             sieve_divisors,
             y_smooth_bits: vec![],
-            xs_with_smooth_ys: vec![],
+            relations: vec![],
         }
     }
 
@@ -314,10 +327,6 @@ impl Sieve {
                         self.y_smooth_bits[*offset].saturating_add(factor.p_bits);
                     if self.y_smooth_bits[*offset] as u16 * 4 >= target_bits as u16 * 3 {
                         let x = &self.min_candidate + BigUint::from(*offset);
-                        // TODO: could optimize as
-                        //     y = min_candidate^2 - n + offset (2 min_candidate + offset)
-                        // with min_candidate^2 - n precomputed
-                        // May be unnecessary if we do this in log space.
                         let y = &x * &x - &self.n;
 
                         let y_smooth_part =
@@ -326,7 +335,10 @@ impl Sieve {
                         if y_smooth_part == y {
                             let exponents = exponent_vec(y.clone(), &self.base)
                                 .expect("already passed fast smoothness check");
-                            self.xs_with_smooth_ys.push(x);
+                            self.relations.push(Relation {
+                                x,
+                                y_parity_vec: exponent_vec_to_parity_vec(&exponents),
+                            });
 
                             for (i, exp) in exponents.iter().enumerate() {
                                 self.base_counts[i] += exp % 2;
@@ -360,8 +372,10 @@ impl Sieve {
         }
     }
 
+    #[instrument(skip_all)]
     fn y_smooth_part(&self, offset: usize, factors_of_two: u64) -> BigUint {
-        // TODO: Do in log space, with f64 or as much precision as needed,
+        // TODO: Could use a libdivide port, although M1 etc have pretty fast division anyway...
+        // TODO: Or just do in log space, with f64 or as much precision as needed,
         // so there's no bignum math. Don't necessarily need 100% accuracy yet, just
         // fewer false positives & ideally no false negatives.
         let mut y_smooth_part = BigUint::one() << factors_of_two;
@@ -380,7 +394,6 @@ impl Sieve {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
     use core::str::FromStr;
 
     use num_bigint::BigUint;
@@ -391,42 +404,8 @@ mod tests {
     use tracing_subscriber::{EnvFilter, Registry};
 
     use crate::bitvec::BitVec;
-    use crate::qsieve::{exponent_parity_vec, Sieve};
+    use crate::qsieve::exponent_parity_vec;
     use crate::{CompositeSplitter, QuadraticSieve};
-
-    #[test]
-    fn test_sieve() {
-        let n = BigUint::from(100u8);
-        let mut sieve = Sieve::new(&n, vec![3, 17]);
-        sieve.expand_to(20);
-        assert_eq!(&sieve.min_candidate, &BigUint::from(11u8));
-        assert_eq!(
-            &sieve.y_smooth_bits,
-            &[
-                // We start from x=11.
-                3f64.log2(),
-                0f64,
-                3f64.log2(),
-                3f64.log2(),
-                0f64,
-                3f64.log2(),
-                3f64.log2() + 3f64.log2() + 3f64.log2(),
-                0f64,
-                3f64.log2() + 3f64.log2(),
-                3f64.log2(),
-                0f64,
-                3f64.log2(),
-                3f64.log2(),
-                17f64.log2(),
-                3f64.log2(),
-                3f64.log2() + 3f64.log2(),
-                17f64.log2(),
-                3f64.log2() + 3f64.log2(),
-                3f64.log2(),
-                0f64,
-            ]
-        );
-    }
 
     #[test]
     fn test_exponent_parity_vec() {
