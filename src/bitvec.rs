@@ -79,6 +79,19 @@ impl BitVec {
             position: 0,
         }
     }
+
+    /// Rotate `k` bits to the left, i.e. in the direction of smaller indices.
+    pub fn rotl(&self, k: usize) -> Self {
+        let l = self.len;
+        Self::from_iter((0..l).map(|i| self.get((i + k) % l)))
+    }
+
+    /// Rotate `k` bits to the right, i.e. in the direction of greater indices.
+    pub fn rotr(&self, k: usize) -> Self {
+        let l = self.len;
+        let k = k % l;
+        Self::from_iter((0..l).map(|i| self.get((l + i - k) % l)))
+    }
 }
 
 impl<const N: usize> From<[bool; N]> for BitVec {
@@ -161,5 +174,15 @@ mod tests {
             BitVec::from([false, true, false, true, false, true, false, true]).count_ones(),
             4
         );
+    }
+
+    #[test]
+    fn test_rotl() {
+        assert_eq!(BitVec::from([true, false, false, false, true]).rotl(1), BitVec::from([false, false, false, true, true]));
+    }
+
+    #[test]
+    fn test_rotr() {
+        assert_eq!(BitVec::from([true, false, false, false, true]).rotr(1), BitVec::from([true, true, false, false, false]));
     }
 }

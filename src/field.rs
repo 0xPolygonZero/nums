@@ -53,7 +53,7 @@ pub(crate) fn sqrt_mod_prime_power(n: usize, p: usize, k: usize) -> Option<usize
             let q = p.pow(k as u32);
             let r = q / p;
             let e = (q - 2 * r + 1) / 2;
-            let res = zn_pow(x, r, q) * zn_pow(n, e, q);
+            let res = zn_mul(zn_pow(x, r, q), zn_pow(n, e, q), q);
             Some(res % q)
         }
     } else {

@@ -97,7 +97,7 @@ impl CompositeSplitter for QuadraticSieve {
         // Find a mask such that the mask applied to sparse_y_parity_vecs yields zero.
         // Thus, the mask applied to sparse y's yields something with even exponents
         // on each prime in our base.
-        let mut solution_index = BigUint::one();
+        let mut solution_index = BigUint::zero();
         loop {
             // TODO: Apply some bit-oriented permutation to solution_index to make it more "random"
             let selection = nullspace_member(&sparse_y_parity_vecs_t, &solution_index)
