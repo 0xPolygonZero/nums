@@ -410,7 +410,7 @@ fn permute_solution_index(solution_index: &BigUint) -> BigUint {
 /// Some (very weak, far from cryptographic) pseudorandom permutation of the integers mod `2^bits`.
 fn permute(n: &BigUint, bits: usize) -> BigUint {
     let mask = (BigUint::one() << bits) - BigUint::one();
-    // In the ring Z / 2^bits Z, multiplication by an odd constant is a permutation
+    // In the ring Z / 2^bits Z, multiplication by an odd (invertible) constant is a permutation.
     n * BigUint::from(173u8) & mask
 }
 
