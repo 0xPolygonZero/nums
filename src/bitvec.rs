@@ -18,6 +18,65 @@ impl BitVec {
         Self { bytes, len }
     }
 
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::new(0)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn wrapping_add_le(&self, rhs: &Self) -> Self {
+        self.overflowing_add_le(rhs).0
+    }
+
+    #[must_use]
+    pub fn overflowing_add_le(&self, rhs: &Self) -> (Self, bool) {
+        let len = self.len;
+        assert_eq!(rhs.len, len);
+        let mut bytes = Vec::with_capacity(len);
+
+        let mut carry = false;
+        for (&b1, &b2) in self.bytes.iter().zip(rhs.bytes.iter()) {
+            let (b3, carry_out) = carrying_add_u8(b1, b2, carry);
+            bytes.push(b3);
+            carry = carry_out;
+        }
+
+        let bits_in_last_byte = len % 8;
+        if bits_in_last_byte != 0 {
+            // The last iteration above may have wrongly set an out-of-range bit of the last byte.
+            assert!(!carry);
+            let last_byte = bytes.last_mut().unwrap();
+            let shifted_carry = *last_byte & (1 << bits_in_last_byte);
+            *last_byte ^= shifted_carry;
+            carry = shifted_carry != 0;
+        }
+
+        (Self { bytes, len }, carry)
+    }
+
+    /// Treating this bit vector as the little-endian encoding of an integer, increment that
+    /// integer, wrapping around `2^len`.
+    #[must_use]
+    #[inline]
+    pub fn wrapping_inc_le(&self) -> Self {
+        if self.is_empty() {
+            return Self::empty();
+        }
+
+        let mut one = Self::new(self.len);
+        one.set(0, true);
+        self.wrapping_add_le(&one)
+    }
+
+    #[must_use]
+    #[inline]
+    pub fn overflowing_inc_le(&self) -> (Self, bool) {
+        let mut one = Self::new(self.len);
+        one.set(0, true);
+        self.overflowing_add_le(&one)
+    }
+
     #[inline]
     pub fn set(&mut self, i: usize, v: bool) {
         assert!(i < self.len);
@@ -154,6 +213,13 @@ impl Debug for BitVec {
     }
 }
 
+#[inline]
+fn carrying_add_u8(x: u8, y: u8, carry_in: bool) -> (u8, bool) {
+    let (sum, over1) = x.overflowing_add(y);
+    let (sum, over2) = sum.overflowing_add(carry_in as u8);
+    (sum, over1 | over2)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::bitvec::BitVec;
@@ -178,11 +244,44 @@ mod tests {
 
     #[test]
     fn test_rotl() {
-        assert_eq!(BitVec::from([true, false, false, false, true]).rotl(1), BitVec::from([false, false, false, true, true]));
+        assert_eq!(
+            BitVec::from([true, false, false, false, true]).rotl(1),
+            BitVec::from([false, false, false, true, true])
+        );
     }
 
     #[test]
     fn test_rotr() {
-        assert_eq!(BitVec::from([true, false, false, false, true]).rotr(1), BitVec::from([true, true, false, false, false]));
+        assert_eq!(
+            BitVec::from([true, false, false, false, true]).rotr(1),
+            BitVec::from([true, true, false, false, false])
+        );
+    }
+
+    #[test]
+    fn test_inc() {
+        assert_eq!(
+            BitVec::from([true, true, false, false, true]).wrapping_inc_le(),
+            BitVec::from([false, false, true, false, true])
+        );
+
+        assert_eq!(
+            BitVec::from([true, true, true, true, true, true, true, true, false, false])
+                .wrapping_inc_le(),
+            BitVec::from([false, false, false, false, false, false, false, false, true, false])
+        );
+    }
+
+    #[test]
+    fn test_inc_with_wrapping() {
+        assert_eq!(
+            BitVec::from([true, true, true, true, true]).wrapping_inc_le(),
+            BitVec::from([false, false, false, false, false])
+        );
+
+        assert_eq!(
+            BitVec::from([true, true, true, true, true, true, true, true]).wrapping_inc_le(),
+            BitVec::from([false, false, false, false, false, false, false, false])
+        );
     }
 }

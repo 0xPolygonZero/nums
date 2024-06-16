@@ -154,6 +154,7 @@ fn exponent_vec(mut x: BigUint, base: &[usize]) -> Option<Vec<usize>> {
 }
 
 /// If `x` is smooth with respect to `base`, return its exponents.
+#[cfg(test)]
 fn exponent_parity_vec(x: BigUint, base: &[usize]) -> Option<BitVec> {
     exponent_vec(x, base)
         .as_deref()
