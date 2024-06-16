@@ -62,7 +62,7 @@ impl CompositeSplitter for QuadraticSieve {
         let mut sieve_iteration = 0usize;
         loop {
             let primes_with_some_odd_exp = sieve.base_counts.iter().filter(|&&c| c > 0).count();
-            let min_smooth_ys = primes_with_some_odd_exp + EXTRA_SMOOTH_YS;
+            let min_smooth_ys = primes_with_some_odd_exp + 1 + EXTRA_SMOOTH_YS;
             if sieve.relations.len() >= min_smooth_ys {
                 break;
             }
@@ -72,7 +72,7 @@ impl CompositeSplitter for QuadraticSieve {
                 sieve_iteration,
                 sieve.relations.len(),
                 min_smooth_ys,
-                base.len() + EXTRA_SMOOTH_YS
+                base.len() + 1 + EXTRA_SMOOTH_YS
             );
             // TODO: To improve it for tiny inputs, maybe do some multiple of base.len()?
             sieve.expand_by(1 << 23);
@@ -88,7 +88,7 @@ impl CompositeSplitter for QuadraticSieve {
 
         // TODO: Bit-reverse each vec in sparse_y_parity_vecs? Might improve GE performance.
 
-        // Transpose it to a matrix with n rows and n + MARGIN columns.
+        // Transpose it to a matrix with n rows and n + 1 + EXTRA_SMOOTH_YS columns.
         let mut sparse_y_parity_vecs_t = transpose(sparse_y_parity_vecs);
 
         // Use Gaussian elimination to transform the matrix into row echelon form.
@@ -99,9 +99,13 @@ impl CompositeSplitter for QuadraticSieve {
         // on each prime in our base.
         let mut solution_index = BigUint::zero();
         loop {
-            // TODO: Apply some bit-oriented permutation to solution_index to make it more "random"
-            let selection = nullspace_member(&sparse_y_parity_vecs_t, &solution_index)
-                .expect("No more solutions to try; need to expand margin");
+            // Anecdotally, clusters of trivial solution indices tend to be grouped together, e.g.
+            // we might encounter trivial solutions only until the `k`th bit is 1. To avoid
+            // enumerating a large cluster of trivial solutions, we "randomize" the solution index
+            // by applying some weak permutation.
+            let permuted_index = permute_solution_index(&solution_index);
+            let selection = nullspace_member(&sparse_y_parity_vecs_t, &permuted_index)
+                .expect("No more solutions to try; need to expand EXTRA_SMOOTH_YS");
             event!(Level::DEBUG, "Selection: {:?}", &selection);
             assert_eq!(selection.len(), relations.len());
 
@@ -391,6 +395,23 @@ impl Sieve {
         }
         y_smooth_part
     }
+}
+
+/// Apply some (very weak, far from cryptographic) pseudorandom permutation to the `EXTRA_SMOOTH_YS`
+/// low bits of  `solution_index`. This should result in another valid solution index, since there
+/// should be at least `2^EXTRA_SMOOTH_YS` solutions in the nullspace.
+fn permute_solution_index(solution_index: &BigUint) -> BigUint {
+    let mask = (BigUint::one() << EXTRA_SMOOTH_YS) - BigUint::one();
+    let low_bits = solution_index & mask;
+    let permuted_low_bits = permute(&low_bits, EXTRA_SMOOTH_YS);
+    solution_index ^ low_bits ^ permuted_low_bits
+}
+
+/// Some (very weak, far from cryptographic) pseudorandom permutation of the integers mod `2^bits`.
+fn permute(n: &BigUint, bits: usize) -> BigUint {
+    let mask = (BigUint::one() << bits) - BigUint::one();
+    // In the ring Z / 2^bits Z, multiplication by an odd constant is a permutation
+    n * BigUint::from(173u8) & mask
 }
 
 #[cfg(test)]
